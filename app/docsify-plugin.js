@@ -335,7 +335,57 @@ window.$docsify = {
         });
       };
 
-      // 4. 渲染评论区的 HTML 结构
+      // 4. 论文“已阅读”状态管理（存储在 localStorage）
+      const READ_STORAGE_KEY = 'dpr_read_papers_v1';
+
+      const loadReadState = () => {
+        try {
+          if (!window.localStorage) return {};
+          const raw = window.localStorage.getItem(READ_STORAGE_KEY);
+          if (!raw) return {};
+          const obj = JSON.parse(raw);
+          return obj && typeof obj === 'object' ? obj : {};
+        } catch {
+          return {};
+        }
+      };
+
+      const saveReadState = (state) => {
+        try {
+          if (!window.localStorage) return;
+          window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(state));
+        } catch {
+          // ignore
+        }
+      };
+
+      const markSidebarReadState = (currentPaperId) => {
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+
+        const state = loadReadState();
+        if (currentPaperId) {
+          state[currentPaperId] = true;
+          saveReadState(state);
+        }
+
+        const links = nav.querySelectorAll('a[href*="#/"]');
+        links.forEach((a) => {
+          const href = a.getAttribute('href') || '';
+          const m = href.match(/#\/(.+)$/);
+          if (!m) return;
+          const paperIdFromHref = m[1].replace(/\/$/, '');
+          const li = a.closest('li');
+          if (!li) return;
+          if (state[paperIdFromHref]) {
+            li.classList.add('sidebar-paper-read');
+          } else {
+            li.classList.remove('sidebar-paper-read');
+          }
+        });
+      };
+
+      // 5. 渲染评论区的 HTML 结构
       const renderChatUI = () => {
         return `
           <div id="paper-chat-container">
@@ -351,7 +401,7 @@ window.$docsify = {
         `;
       };
 
-      // 5. 获取历史记录 (API)
+      // 6. 获取历史记录 (API)
       const loadHistory = async (paperId) => {
         try {
           const res = await fetch(
@@ -445,7 +495,7 @@ window.$docsify = {
         }
       };
 
-      // 6. 发送消息 (API)
+      // 7. 发送消息 (API)
       const sendMessage = async () => {
         const input = document.getElementById('user-input');
         const btn = document.getElementById('send-btn');
@@ -670,7 +720,17 @@ window.$docsify = {
         setupCollapsibleSidebarByDay();
 
         // ----------------------------------------------------
-        // F. Zotero 元数据注入逻辑 (带延时和唤醒)
+        // F. 侧边栏已阅读论文状态高亮
+        // ----------------------------------------------------
+        if (!isHomePage && paperId) {
+          markSidebarReadState(paperId);
+        } else {
+          // 首页也需要应用已有的“已读高亮”，但不新增记录
+          markSidebarReadState(null);
+        }
+
+        // ----------------------------------------------------
+        // G. Zotero 元数据注入逻辑 (带延时和唤醒)
         // ----------------------------------------------------
         setTimeout(() => {
           try {

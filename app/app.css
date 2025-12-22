@@ -177,6 +177,13 @@ article.markdown-section {
   display: none;
 }
 
+/* 已阅读论文在侧边栏中的高亮样式（浅绿色） */
+.sidebar-nav li.sidebar-paper-read > a {
+  background-color: #e6f7e6;
+  border-radius: 4px;
+}
+
+
 /* 侧边栏拖拽句柄 */
 #sidebar-resizer {
   position: fixed;
