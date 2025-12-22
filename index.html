@@ -26,7 +26,7 @@
     // 默认留空时，使用与当前站点同源的 /api 前缀。
     // window.API_BASE_URL = window.API_BASE_URL || '';
     // window.API_BASE_URL = 'http://127.0.0.1:8008';
-    window.API_BASE_URL = '';
+    window.API_BASE_URL = 'http://localhost:8008';
   </script>
   
   <style>
@@ -504,9 +504,9 @@
     window.$docsify = {
       name: 'Daily Paper Reader',
       repo: '',
-      // 从根目录加载，但文档内容与侧边栏都存放在 docs/ 下
-      loadSidebar: 'docs/_sidebar.md', // 开启侧边栏，路径指向 docs 目录
-      basePath: 'docs/',               // 所有 Markdown 路由以 docs/ 为前缀
+      // 文档内容与侧边栏都存放在 docs/ 下
+      basePath: 'docs/',       // 所有 Markdown 路由以 docs/ 为前缀
+      loadSidebar: '_sidebar.md', // 在 basePath 下加载 _sidebar.md
       subMaxLevel: 2,
       
       // --- 核心：注册自定义插件 ---
