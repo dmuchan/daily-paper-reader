@@ -40,7 +40,7 @@ window.SubscriptionsManager = (function () {
           <div style="font-weight:500; margin-bottom:8px; font-size:14px;">GitHub Token 配置</div>
           <div style="font-size:12px; color:#856404; margin-bottom:8px; line-height:1.5;">
             <strong>⚠️ 隐私说明：</strong>密钥仅保存在浏览器本地存储，不会上传到云端。<br>
-            <strong>所需权限：</strong>repo（仓库读写）、workflow（工作流）、gist<br>
+            <strong>所需权限：</strong>repo（仓库读写）、workflow（工作流）<br>
             <strong>注意：</strong>请确保该 Token 有权限管理当前 GitHub Pages 所在仓库
           </div>
           <div style="display:flex; gap:8px; margin-bottom:8px;">

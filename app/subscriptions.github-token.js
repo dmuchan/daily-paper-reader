@@ -55,7 +55,7 @@ window.SubscriptionsGithubToken = (function () {
       const scopes = userRes.headers.get('X-OAuth-Scopes');
       const scopeList = scopes ? scopes.split(',').map((s) => s.trim()) : [];
 
-      const requiredScopes = ['repo', 'workflow', 'gist'];
+      const requiredScopes = ['repo', 'workflow'];
       const missingScopes = requiredScopes.filter(
         (scope) => !scopeList.includes(scope),
       );
