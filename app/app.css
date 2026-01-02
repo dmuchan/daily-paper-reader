@@ -363,6 +363,8 @@ article.markdown-section {
 
 /* 当前页面所在行：仅通过淡蓝色椭圆背景高亮，不再使用右侧绿色细边 */
 .sidebar-nav li.sidebar-paper-item {
+  display: flex;
+  align-items: center;
   border-right: none;
   /* 统一行内边距与外边距，确保圆角背景完整填充整行 */
   margin-top: 0;
@@ -375,7 +377,12 @@ article.markdown-section {
 }
 .sidebar-nav li.sidebar-paper-item > a {
   text-decoration: none;
-  display: block; /* 让链接占满整行，避免背景只覆盖部分区域 */
+  display: block;
+  flex: 1 1 auto;          /* 占据剩余空间 */
+  min-width: 0;            /* 允许收缩以触发省略号 */
+  overflow: hidden;
+  text-overflow: ellipsis; /* 文本过长时省略 */
+  white-space: nowrap;
 }
 /* 悬停：浅灰色圆角背景（作用在整行 li 上） */
 .sidebar-nav li.sidebar-paper-item:hover {
@@ -462,6 +469,60 @@ article.markdown-section {
   height: 6px;
   border-radius: 50%;
   background-color: #91d5ff; /* 淡蓝色 */
+}
+
+/* 侧边栏内“不错 / 一般”圆形图标按钮容器 */
+.sidebar-paper-rating-icons {
+  display: none; /* 默认隐藏，只有选中项才展示 */
+  gap: 4px;
+  margin-left: 8px;
+}
+
+/* 仅当前选中的论文条目才显示评价图标 */
+.sidebar-nav li.sidebar-paper-item.active .sidebar-paper-rating-icons {
+  display: inline-flex;
+}
+
+.sidebar-paper-rating-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background-color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.sidebar-paper-rating-icon.good {
+  color: #73d13d;
+  border-color: #b7eb8f;
+}
+
+.sidebar-paper-rating-icon.bad {
+  color: #ff7875;
+  border-color: #ffccc7;
+}
+
+.sidebar-paper-rating-icon.active {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* 选中时前景/背景颜色对调 */
+.sidebar-paper-rating-icon.good.active {
+  background-color: #73d13d;
+  color: #ffffff;
+  border-color: #73d13d;
+}
+
+.sidebar-paper-rating-icon.bad.active {
+  background-color: #ff7875;
+  color: #ffffff;
+  border-color: #ff7875;
 }
 
 /* 论文详情页标题区域的评价按钮 */
