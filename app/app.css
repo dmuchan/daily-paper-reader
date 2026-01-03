@@ -1,8 +1,8 @@
 /* 全局布局与变量 */
 :root {
-  --sidebar-width: 260px;
+  --sidebar-width: 380px;
   --sidebar-min-width: 180px;
-  --sidebar-max-width: 480px;
+  --sidebar-max-width: 600px;
 }
 
 .katex .katex-mathml {
@@ -137,6 +137,12 @@
   pointer-events: none;
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, #ffffff 100%);
   z-index: 1498;
+}
+
+/* 当侧边栏收起（body.close）时，底部白色遮罩也从屏幕最左侧开始覆盖，避免留出未遮罩区域 */
+body.close #paper-chat-container::before,
+body.close #paper-chat-container::after {
+  left: 0;
 }
 
 /* 大屏幕下：在左侧 sidebar 底部增加一条纯白遮罩带，
@@ -624,6 +630,13 @@ article.markdown-section {
   width: var(--sidebar-width, 260px) !important;
   min-width: var(--sidebar-min-width, 180px);
   max-width: var(--sidebar-max-width, 480px);
+}
+
+/* 大屏下：收起侧边栏时按当前实际宽度整块滑出视口，避免拖宽后仍残留一条 */
+@media (min-width: 769px) {
+  body.close .sidebar {
+    transform: translateX(calc(-1 * var(--sidebar-width, 260px))) !important;
+  }
 }
 
 /* 侧边栏按日期折叠：日期行样式与箭头 */
