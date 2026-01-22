@@ -247,22 +247,38 @@ window.SubscriptionsGithubToken = (function () {
     return { config: cfg, sha: data.sha };
   };
 
-  // 从当前站点根目录直接读取 config.yaml（无需 GitHub Token，仅用于前端展示）
+  // 从当前站点相对路径读取 config.yaml（无需 GitHub Token，仅用于前端展示）
+  // 注意：GitHub Pages 通常是 https://<user>.github.io/<repo>/，因此不能用绝对路径 /config.yaml（会指向域名根）。
   const loadConfig = async () => {
     try {
-      const res = await fetch('/config.yaml', { cache: 'no-store' });
-      if (!res.ok) {
-        throw new Error(`无法读取本地 config.yaml（HTTP ${res.status}）`);
+      const candidates = [
+        'config.yaml',
+        'docs/config.yaml',
+        '../config.yaml',
+      ];
+
+      let lastError = null;
+      for (const url of candidates) {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) {
+            lastError = new Error(`无法读取 ${url}（HTTP ${res.status}）`);
+            continue;
+          }
+          const text = await res.text();
+          const yaml = window.jsyaml || window.jsYaml || window.jsYAML;
+          if (!yaml || typeof yaml.load !== 'function') {
+            throw new Error('前端缺少 YAML 解析库（js-yaml），无法解析 config.yaml。');
+          }
+          const cfg = yaml.load(text || '') || {};
+          return { config: cfg, sha: null, source: url };
+        } catch (e) {
+          lastError = e;
+        }
       }
-      const text = await res.text();
-      const yaml = window.jsyaml || window.jsYaml || window.jsYAML;
-      if (!yaml || typeof yaml.load !== 'function') {
-        throw new Error('前端缺少 YAML 解析库（js-yaml），无法解析 config.yaml。');
-      }
-      const cfg = yaml.load(text || '') || {};
-      return { config: cfg, sha: null };
+      throw lastError || new Error('无法读取本地 config.yaml（未知原因）');
     } catch (e) {
-      console.error('从根目录读取 config.yaml 失败：', e);
+      console.error('从站点读取 config.yaml 失败：', e);
       throw e;
     }
   };
