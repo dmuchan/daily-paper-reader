@@ -1,4 +1,32 @@
 * [首页](/)
 * Daily Papers
+  * 2026-01-22
+    * 精读区
+      * [CorpusQA: A 10 Million Token Benchmark for Corpus-Level Analysis and Reasoning](202601/22/2601.14952v1-corpusqa-a-10-million-token-benchmark-for-corpus-level-analysis-and-reasoning)
+      * [A Comprehensive Benchmark of Language Models on Unicode and Romanized Sinhala](202601/22/2601.14958v1-a-comprehensive-benchmark-of-language-models-on-unicode-and-romanized-sinhala)
+      * [Outcome-Based RL Provably Leads Transformers to Reason, but Only With the Right Data](202601/22/2601.15158v1-outcome-based-rl-provably-leads-transformers-to-reason-but-only-with-the-right-data)
+      * [Improving Regret Approximation for Unsupervised Dynamic Environment Generation](202601/22/2601.14957v1-improving-regret-approximation-for-unsupervised-dynamic-environment-generation)
+      * [Memory Retention Is Not Enough to Master Memory Tasks in Reinforcement Learning](202601/22/2601.15086v1-memory-retention-is-not-enough-to-master-memory-tasks-in-reinforcement-learning)
+      * [CLEANER: Self-Purified Trajectories Boost Agentic Reinforcement Learning](202601/22/2601.15141v1-cleaner-self-purified-trajectories-boost-agentic-reinforcement-learning)
+      * [Knowledge Graphs are Implicit Reward Models: Path-Derived Signals Enable Compositional Reasoning](202601/22/2601.15160v1-knowledge-graphs-are-implicit-reward-models-path-derived-signals-enable-compositional-reasoning)
+      * [Benchmarking Large Language Models for ABAP Code Generation: An Empirical Study on Iterative Improvement by Compiler Feedback](202601/22/2601.15188v1-benchmarking-large-language-models-for-abap-code-generation-an-empirical-study-on-iterative-improvement-by-compiler-feedback)
+      * [Metadata Conditioned Large Language Models for Localization](202601/22/2601.15236v1-metadata-conditioned-large-language-models-for-localization)
+    * 速读区
+      * [Plug-and-Play Benchmarking of Reinforcement Learning Algorithms for Large-Scale Flow Control](202601/22/2601.15015v1-plug-and-play-benchmarking-of-reinforcement-learning-algorithms-for-large-scale-flow-control)
+      * [State of the Art of LLM-Enabled Interaction with Visualization](202601/22/2601.14943v1-state-of-the-art-of-llm-enabled-interaction-with-visualization)
+      * [LiViBench: An Omnimodal Benchmark for Interactive Livestream Video Understanding](202601/22/2601.15016v1-livibench-an-omnimodal-benchmark-for-interactive-livestream-video-understanding)
+      * [What Should I Cite? A RAG Benchmark for Academic Citation Prediction](202601/22/2601.14949v1-what-should-i-cite-a-rag-benchmark-for-academic-citation-prediction)
+      * [A Curriculum-Based Deep Reinforcement Learning Framework for the Electric Vehicle Routing Problem](202601/22/2601.15038v1-a-curriculum-based-deep-reinforcement-learning-framework-for-the-electric-vehicle-routing-problem)
+      * [Knowledge Restoration-driven Prompt Optimization: Unlocking LLM Potential for Open-Domain Relational Triplet Extraction](202601/22/2601.15037v1-knowledge-restoration-driven-prompt-optimization-unlocking-llm-potential-for-open-domain-relational-triplet-extraction)
+      * [Parameter-Efficient Multi-Task Fine-Tuning in Code-Related Tasks](202601/22/2601.15094v1-parameter-efficient-multi-task-fine-tuning-in-code-related-tasks)
+      * [Game-Theoretic Lens on LLM-based Multi-Agent Systems](202601/22/2601.15047v1-game-theoretic-lens-on-llm-based-multi-agent-systems)
+      * [The Plausibility Trap: Using Probabilistic Engines for Deterministic Tasks](202601/22/2601.15130v1-the-plausibility-trap-using-probabilistic-engines-for-deterministic-tasks)
+      * [\textsc{LogicScore}: Fine-grained Logic Evaluation of Conciseness, Completeness, and Determinateness in Attributed Question Answering](202601/22/2601.15050v1-textsclogicscore-fine-grained-logic-evaluation-of-conciseness-completeness-and-determinateness-in-attributed-question-answering)
+      * [Vehicle Routing with Finite Time Horizon using Deep Reinforcement Learning with Improved Network Embedding](202601/22/2601.15131v1-vehicle-routing-with-finite-time-horizon-using-deep-reinforcement-learning-with-improved-network-embedding)
+      * [Multi-Agent Constraint Factorization Reveals Latent Invariant Solution Structure](202601/22/2601.15077v1-multi-agent-constraint-factorization-reveals-latent-invariant-solution-structure)
+      * [Evaluation of Large Language Models in Legal Applications: Challenges, Methods, and Future Directions](202601/22/2601.15267v1-evaluation-of-large-language-models-in-legal-applications-challenges-methods-and-future-directions)
+      * [RSNA Large Language Model Benchmark Dataset for Chest Radiographs of Cardiothoracic Disease: Radiologist Evaluation and Validation Enhanced by AI Labels (REVEAL-CXR)](202601/22/2601.15129v1-rsna-large-language-model-benchmark-dataset-for-chest-radiographs-of-cardiothoracic-disease-radiologist-evaluation-and-validation-enhanced-by-ai-labels-reveal-cxr)
+      * [How to Build AI Agents by Augmenting LLMs with Codified Human Expert Domain Knowledge? A Software Engineering Framework](202601/22/2601.15153v1-how-to-build-ai-agents-by-augmenting-llms-with-codified-human-expert-domain-knowledge-a-software-engineering-framework)
+      * [Automated Rubrics for Reliable Evaluation of Medical Dialogue Systems](202601/22/2601.15161v1-automated-rubrics-for-reliable-evaluation-of-medical-dialogue-systems)
   * 2017-06-12
     * [Attention Is All You Need](201706/12/1706.03762v1-attention-is-all-you-need)
