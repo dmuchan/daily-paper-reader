@@ -2,6 +2,7 @@
 * Daily Papers
   * 2026-01-23
     * 精读区
+<<<<<<< HEAD
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.15812v1-errormap-and-erroratlas-charting-the-failure-landscape-of-large-language-models"><div class="dpr-sidebar-title">ErrorMap and ErrorAtlas: Charting the Failure Landscape of Large Language Models</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-query">大厂llm</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">sr-bench</span></div></a>
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.16206v1-llm-in-sandbox-elicits-general-agentic-intelligence"><div class="dpr-sidebar-title">LLM-in-Sandbox Elicits General Agentic Intelligence</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">RL</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">ppo</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">符号回归（示例）</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">大厂llm</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">sr-bench</span></div></a>
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.15690v1-from-passive-metric-to-active-signal-the-evolving-role-of-uncertainty-quantification-in-large-language-models"><div class="dpr-sidebar-title">From Passive Metric to Active Signal: The Evolving Role of Uncertainty Quantification in Large Language Models</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">RL</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">resnet</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">符号回归（示例）</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">大厂llm</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">sr-bench</span></div></a>
@@ -26,5 +27,62 @@
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.15892v1-stable-diffcoder-pushing-the-frontier-of-code-diffusion-large-language-model"><div class="dpr-sidebar-title">Stable-DiffCoder: Pushing the Frontier of Code Diffusion Large Language Model</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">resnet</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">符号回归（示例）</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">大厂llm</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">sr-bench</span></div></a>
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.15912v1-tenet-text-to-network-for-compact-policy-synthesis"><div class="dpr-sidebar-title">TeNet: Text-to-Network for Compact Policy Synthesis</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">RL</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">大厂llm</span></div></a>
       * <a class="dpr-sidebar-item-link" href="#/202601/23/2601.15995v1-puma-perception-driven-unified-foothold-prior-for-mobility-augmented-quadruped-parkour"><div class="dpr-sidebar-title">PUMA: Perception-driven Unified Foothold Prior for Mobility Augmented Quadruped Parkour</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">RL</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">sr-bench</span></div></a>
+=======
+      * [CogToM: A Comprehensive Theory of Mind Benchmark inspired by Human Cognition for Large Language Models](202601/23/2601.15628v1-cogtom-a-comprehensive-theory-of-mind-benchmark-inspired-by-human-cognition-for-large-language-models)
+      * [PAL*M: Property Attestation for Large Generative Models](202601/23/2601.16199v1-palm-property-attestation-for-large-generative-models)
+      * [Robust Tool Use via Fission-GRPO: Learning to Recover from Execution Errors](202601/23/2601.15625v1-robust-tool-use-via-fission-grpo-learning-to-recover-from-execution-errors)
+      * [Improving Methodologies for LLM Evaluations Across Global Languages](202601/23/2601.15706v1-improving-methodologies-for-llm-evaluations-across-global-languages)
+      * [Persona Switch: Mixing Distinct Perspectives in Decoding Time](202601/23/2601.15708v1-persona-switch-mixing-distinct-perspectives-in-decoding-time)
+      * [Off-Policy Actor-Critic with Sigmoid-Bounded Entropy for Real-World Robot Learning](202601/23/2601.15761v1-off-policy-actor-critic-with-sigmoid-bounded-entropy-for-real-world-robot-learning)
+      * [Decoupling Return-to-Go for Efficient Decision Transformer](202601/23/2601.15953v1-decoupling-return-to-go-for-efficient-decision-transformer)
+      * [PhysicsMind: Sim and Real Mechanics Benchmarking for Physical Reasoning and Prediction in Foundational VLMs and World Models](202601/23/2601.16007v1-physicsmind-sim-and-real-mechanics-benchmarking-for-physical-reasoning-and-prediction-in-foundational-vlms-and-world-models)
+      * [Structured Hints for Sample-Efficient Lean Theorem Proving](202601/23/2601.16172v1-structured-hints-for-sample-efficient-lean-theorem-proving)
+      * [LLM-in-Sandbox Elicits General Agentic Intelligence](202601/23/2601.16206v1-llm-in-sandbox-elicits-general-agentic-intelligence)
+    * 速读区
+      * [EmotionThinker: Prosody-Aware Reinforcement Learning for Explainable Speech Emotion Reasoning](202601/23/2601.15668v1-emotionthinker-prosody-aware-reinforcement-learning-for-explainable-speech-emotion-reasoning)
+      * [Explainable Deepfake Detection with RL Enhanced Self-Blended Images](202601/23/2601.15624v1-explainable-deepfake-detection-with-rl-enhanced-self-blended-images)
+      * [From Passive Metric to Active Signal: The Evolving Role of Uncertainty Quantification in Large Language Models](202601/23/2601.15690v1-from-passive-metric-to-active-signal-the-evolving-role-of-uncertainty-quantification-in-large-language-models)
+      * [Towards Automated Kernel Generation in the Era of LLMs](202601/23/2601.15727v1-towards-automated-kernel-generation-in-the-era-of-llms)
+      * [ErrorMap and ErrorAtlas: Charting the Failure Landscape of Large Language Models](202601/23/2601.15812v1-errormap-and-erroratlas-charting-the-failure-landscape-of-large-language-models)
+      * [PhysProver: Advancing Automatic Theorem Proving for Physics](202601/23/2601.15737v1-physprover-advancing-automatic-theorem-proving-for-physics)
+      * [PUMA: Perception-driven Unified Foothold Prior for Mobility Augmented Quadruped Parkour](202601/23/2601.15995v1-puma-perception-driven-unified-foothold-prior-for-mobility-augmented-quadruped-parkour)
+      * [HumanLLM: Towards Personalized Understanding and Simulation of Human Nature](202601/23/2601.15793v1-humanllm-towards-personalized-understanding-and-simulation-of-human-nature)
+      * [Dynamic Tactile Sensing System and Soft Actor Critic Reinforcement Learning for Inclusion Characterization](202601/23/2601.16061v1-dynamic-tactile-sensing-system-and-soft-actor-critic-reinforcement-learning-for-inclusion-characterization)
+      * [Inference-Time Scaling of Verification: Self-Evolving Deep Research Agents via Test-Time Rubric-Guided Verification](202601/23/2601.15808v1-inference-time-scaling-of-verification-self-evolving-deep-research-agents-via-test-time-rubric-guided-verification)
+      * [SAMTok: Representing Any Mask with Two Words](202601/23/2601.16093v1-samtok-representing-any-mask-with-two-words)
+      * [Why Inference in Large Models Becomes Decomposable After Training](202601/23/2601.15871v1-why-inference-in-large-models-becomes-decomposable-after-training)
+      * [Adapter Fusion for Multilingual Text2Cypher with Linear and Learned Gating](202601/23/2601.16097v1-adapter-fusion-for-multilingual-text2cypher-with-linear-and-learned-gating)
+      * [Stable-DiffCoder: Pushing the Frontier of Code Diffusion Large Language Model](202601/23/2601.15892v1-stable-diffcoder-pushing-the-frontier-of-code-diffusion-large-language-model)
+      * [Efficiently Learning Robust Torque-based Locomotion Through Reinforcement with Model-Based Supervision](202601/23/2601.16109v1-efficiently-learning-robust-torque-based-locomotion-through-reinforcement-with-model-based-supervision)
+      * [Collision-Free Humanoid Traversal in Cluttered Indoor Scenes](202601/23/2601.16035v1-collision-free-humanoid-traversal-in-cluttered-indoor-scenes)
+  * 2026-01-22
+    * 精读区
+      * [CorpusQA: A 10 Million Token Benchmark for Corpus-Level Analysis and Reasoning](202601/22/2601.14952v1-corpusqa-a-10-million-token-benchmark-for-corpus-level-analysis-and-reasoning)
+      * [A Comprehensive Benchmark of Language Models on Unicode and Romanized Sinhala](202601/22/2601.14958v1-a-comprehensive-benchmark-of-language-models-on-unicode-and-romanized-sinhala)
+      * [Outcome-Based RL Provably Leads Transformers to Reason, but Only With the Right Data](202601/22/2601.15158v1-outcome-based-rl-provably-leads-transformers-to-reason-but-only-with-the-right-data)
+      * [Improving Regret Approximation for Unsupervised Dynamic Environment Generation](202601/22/2601.14957v1-improving-regret-approximation-for-unsupervised-dynamic-environment-generation)
+      * [Memory Retention Is Not Enough to Master Memory Tasks in Reinforcement Learning](202601/22/2601.15086v1-memory-retention-is-not-enough-to-master-memory-tasks-in-reinforcement-learning)
+      * [CLEANER: Self-Purified Trajectories Boost Agentic Reinforcement Learning](202601/22/2601.15141v1-cleaner-self-purified-trajectories-boost-agentic-reinforcement-learning)
+      * [Knowledge Graphs are Implicit Reward Models: Path-Derived Signals Enable Compositional Reasoning](202601/22/2601.15160v1-knowledge-graphs-are-implicit-reward-models-path-derived-signals-enable-compositional-reasoning)
+      * [Benchmarking Large Language Models for ABAP Code Generation: An Empirical Study on Iterative Improvement by Compiler Feedback](202601/22/2601.15188v1-benchmarking-large-language-models-for-abap-code-generation-an-empirical-study-on-iterative-improvement-by-compiler-feedback)
+      * [Metadata Conditioned Large Language Models for Localization](202601/22/2601.15236v1-metadata-conditioned-large-language-models-for-localization)
+    * 速读区
+      * [Plug-and-Play Benchmarking of Reinforcement Learning Algorithms for Large-Scale Flow Control](202601/22/2601.15015v1-plug-and-play-benchmarking-of-reinforcement-learning-algorithms-for-large-scale-flow-control)
+      * [State of the Art of LLM-Enabled Interaction with Visualization](202601/22/2601.14943v1-state-of-the-art-of-llm-enabled-interaction-with-visualization)
+      * [LiViBench: An Omnimodal Benchmark for Interactive Livestream Video Understanding](202601/22/2601.15016v1-livibench-an-omnimodal-benchmark-for-interactive-livestream-video-understanding)
+      * [What Should I Cite? A RAG Benchmark for Academic Citation Prediction](202601/22/2601.14949v1-what-should-i-cite-a-rag-benchmark-for-academic-citation-prediction)
+      * [A Curriculum-Based Deep Reinforcement Learning Framework for the Electric Vehicle Routing Problem](202601/22/2601.15038v1-a-curriculum-based-deep-reinforcement-learning-framework-for-the-electric-vehicle-routing-problem)
+      * [Knowledge Restoration-driven Prompt Optimization: Unlocking LLM Potential for Open-Domain Relational Triplet Extraction](202601/22/2601.15037v1-knowledge-restoration-driven-prompt-optimization-unlocking-llm-potential-for-open-domain-relational-triplet-extraction)
+      * [Parameter-Efficient Multi-Task Fine-Tuning in Code-Related Tasks](202601/22/2601.15094v1-parameter-efficient-multi-task-fine-tuning-in-code-related-tasks)
+      * [Game-Theoretic Lens on LLM-based Multi-Agent Systems](202601/22/2601.15047v1-game-theoretic-lens-on-llm-based-multi-agent-systems)
+      * [The Plausibility Trap: Using Probabilistic Engines for Deterministic Tasks](202601/22/2601.15130v1-the-plausibility-trap-using-probabilistic-engines-for-deterministic-tasks)
+      * [\textsc{LogicScore}: Fine-grained Logic Evaluation of Conciseness, Completeness, and Determinateness in Attributed Question Answering](202601/22/2601.15050v1-textsclogicscore-fine-grained-logic-evaluation-of-conciseness-completeness-and-determinateness-in-attributed-question-answering)
+      * [Vehicle Routing with Finite Time Horizon using Deep Reinforcement Learning with Improved Network Embedding](202601/22/2601.15131v1-vehicle-routing-with-finite-time-horizon-using-deep-reinforcement-learning-with-improved-network-embedding)
+      * [Multi-Agent Constraint Factorization Reveals Latent Invariant Solution Structure](202601/22/2601.15077v1-multi-agent-constraint-factorization-reveals-latent-invariant-solution-structure)
+      * [Evaluation of Large Language Models in Legal Applications: Challenges, Methods, and Future Directions](202601/22/2601.15267v1-evaluation-of-large-language-models-in-legal-applications-challenges-methods-and-future-directions)
+      * [RSNA Large Language Model Benchmark Dataset for Chest Radiographs of Cardiothoracic Disease: Radiologist Evaluation and Validation Enhanced by AI Labels (REVEAL-CXR)](202601/22/2601.15129v1-rsna-large-language-model-benchmark-dataset-for-chest-radiographs-of-cardiothoracic-disease-radiologist-evaluation-and-validation-enhanced-by-ai-labels-reveal-cxr)
+      * [How to Build AI Agents by Augmenting LLMs with Codified Human Expert Domain Knowledge? A Software Engineering Framework](202601/22/2601.15153v1-how-to-build-ai-agents-by-augmenting-llms-with-codified-human-expert-domain-knowledge-a-software-engineering-framework)
+      * [Automated Rubrics for Reliable Evaluation of Medical Dialogue Systems](202601/22/2601.15161v1-automated-rubrics-for-reliable-evaluation-of-medical-dialogue-systems)
+>>>>>>> 213bc5282355b927a5048646063bed8191c1e002
   * 2017-06-12
     * [Attention Is All You Need](201706/12/1706.03762v1-attention-is-all-you-need)
