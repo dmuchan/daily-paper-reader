@@ -440,10 +440,6 @@ def generate_glance_overview(title: str, abstract: str, max_retries: int = 3) ->
 
 def build_tags_html(section: str, llm_tags: List[str]) -> str:
     tags_html: List[str] = []
-    if section == "deep":
-        tags_html.append('<span class="tag-label tag-blue">精读区</span>')
-    else:
-        tags_html.append('<span class="tag-label tag-green">速读区</span>')
     seen = set()
     for tag in llm_tags:
         raw = str(tag).strip()
@@ -470,6 +466,21 @@ def build_tags_html(section: str, llm_tags: List[str]) -> str:
             f'<span class="tag-label {css}">{html.escape(label)}</span>'
         )
     return " ".join(tags_html)
+
+
+def normalize_meta_tags_line(content: str) -> Tuple[str, bool]:
+    """
+    兼容历史格式：文章页 `**Tags**` 不再展示“精读区/速读区”标签。
+    只删除标签内容严格为“精读区/速读区”的 span，避免误伤关键词标签。
+    """
+    if not content:
+        return content, False
+    pattern = re.compile(
+        r'<span\s+class="tag-label\s+tag-(?:blue|green)">\s*(?:精读区|速读区)\s*</span>\s*',
+        re.IGNORECASE,
+    )
+    fixed = pattern.sub("", content)
+    return fixed, fixed != content
 
 
 def format_date_str(date_str: str) -> str:
@@ -739,6 +750,15 @@ def process_paper(
             if os.getenv("DPR_DEBUG_STEP6") == "1":
                 log(f"[DEBUG][STEP6] fixed TLDR trailing slash: {os.path.basename(md_path)}")
 
+        # 修复历史格式：文章页 Tags 不再显示“精读区/速读区”
+        fixed, changed = normalize_meta_tags_line(existing)
+        if changed:
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(fixed + ("\n" if not fixed.endswith("\n") else ""))
+            existing = fixed
+            if os.getenv("DPR_DEBUG_STEP6") == "1":
+                log(f"[DEBUG][STEP6] removed section tag from Tags: {os.path.basename(md_path)}")
+
         # 检查是否需要更新速览内容到现有文件
         if glance and "## 速览" not in existing:
             # 在 Abstract 前插入速览
@@ -880,6 +900,11 @@ def main() -> None:
         action="store_true",
         help="只更新 docs/_sidebar.md（不生成/不重写论文 Markdown，避免触发 LLM 调用）。",
     )
+    parser.add_argument(
+        "--fix-tags-only",
+        action="store_true",
+        help="仅修复已生成文章里的 `**Tags**`（移除“精读区/速读区”标签），不触发 LLM。",
+    )
     args = parser.parse_args()
 
     date_str = args.date or TODAY_STR
@@ -909,6 +934,34 @@ def main() -> None:
     quick_list = payload.get("quick_skim") or []
     if not deep_list and not quick_list:
         log("[INFO] 推荐列表为空，将跳过生成 docs 与更新侧边栏。")
+        return
+
+    if args.fix_tags_only:
+        changed_files = 0
+        total_files = 0
+        for section, lst in (("deep", deep_list), ("quick", quick_list)):
+            for paper in lst:
+                title = (paper.get("title") or "").strip()
+                arxiv_id = str(paper.get("id") or paper.get("paper_id") or "").strip()
+                md_path, _, _ = prepare_paper_paths(docs_dir, date_str, title, arxiv_id)
+                if not os.path.exists(md_path):
+                    continue
+                total_files += 1
+                try:
+                    with open(md_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                except Exception:
+                    continue
+                fixed, changed = normalize_meta_tags_line(content)
+                if not changed:
+                    continue
+                try:
+                    with open(md_path, "w", encoding="utf-8") as f:
+                        f.write(fixed + ("\n" if not fixed.endswith("\n") else ""))
+                    changed_files += 1
+                except Exception:
+                    continue
+        log(f"[OK] fix-tags-only: scanned={total_files}, updated={changed_files}")
         return
 
     deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]] = []

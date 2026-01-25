@@ -486,7 +486,7 @@ body.sidebar-resizing .sidebar::after {
 
 /* 评分星星标签：5 星占位，支持半星 */
 .sidebar-nav .dpr-sidebar-tag-score {
-  background: #fff7e6;
+  background: transparent;
   color: #b26a00;
 }
 
