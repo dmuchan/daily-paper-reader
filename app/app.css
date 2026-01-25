@@ -484,6 +484,37 @@ body.sidebar-resizing .sidebar::after {
   border-radius: 4px;
 }
 
+/* 评分星星标签：5 星占位，支持半星 */
+.sidebar-nav .dpr-sidebar-tag-score {
+  background: #fff7e6;
+  color: #b26a00;
+}
+
+.sidebar-nav .dpr-sidebar-tag-score .dpr-stars {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+  /* 减少字符间距，避免“闪/眼花” */
+  letter-spacing: 0.1px;
+  vertical-align: middle;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar-nav .dpr-sidebar-tag-score .dpr-stars-bg {
+  /* 空星使用“☆”轮廓字符：更清晰，不依赖灰度差异 */
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.sidebar-nav .dpr-sidebar-tag-score .dpr-stars-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #f5b301;
+}
+
 #paper-chat-container #user-input {
   flex: 1;
   padding: 8px 4px;

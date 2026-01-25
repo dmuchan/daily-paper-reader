@@ -4,6 +4,7 @@
 import argparse
 import html
 import json
+import math
 import os
 import re
 import tempfile
@@ -522,6 +523,50 @@ def split_sidebar_tag(tag: str) -> Tuple[str, str]:
     return ("other", raw)
 
 
+def round_half_up(x: float) -> int:
+    return int(math.floor(x + 0.5))
+
+
+def score_to_star_rating(score: Any) -> float:
+    """
+    将 10 分制评分映射为 5 星制，并四舍五入到 0.5 星。
+    例：10->5，9->4.5，8->4，7->3.5
+    """
+    try:
+        s = float(score)
+    except Exception:
+        return 0.0
+    if not math.isfinite(s):
+        return 0.0
+    s = max(0.0, min(10.0, s))
+    return round_half_up(s) / 2.0
+
+
+def build_sidebar_stars_html(score: Any) -> str:
+    rating = score_to_star_rating(score)
+    try:
+        score_str = f"{float(score):.1f}"
+    except Exception:
+        score_str = ""
+
+    if score_str:
+        title = f"评分：{score_str}/10（{rating:.1f}/5）"
+    else:
+        title = "评分：无"
+
+    pct = max(0.0, min(100.0, (rating / 5.0) * 100.0))
+    pct_str = f"{pct:.0f}%"
+
+    # 使用“背景星 + 填充星”的方式支持半星/小数显示
+    return (
+        f'<span class="dpr-stars" title="{html.escape(title)}" '
+        f'aria-label="{rating:.1f} out of 5">'
+        f'<span class="dpr-stars-bg">☆☆☆☆☆</span>'
+        f'<span class="dpr-stars-fill" style="width:{pct_str}">★★★★★</span>'
+        f"</span>"
+    )
+
+
 def extract_sidebar_tags(paper: Dict[str, Any], max_tags: int = 6) -> List[Tuple[str, str]]:
     """
     侧边栏展示的标签：
@@ -558,8 +603,9 @@ def extract_sidebar_tags(paper: Dict[str, Any], max_tags: int = 6) -> List[Tuple
         if max_tags > 0 and len(seen_labels) >= max_tags:
             break
 
-    # 展示顺序：关键词 -> 智能订阅(query) -> 论文引用(paper) -> 其它
-    return kw + q + paper_tags + other
+    # 展示顺序：评分 -> 关键词 -> 智能订阅(query) -> 论文引用(paper) -> 其它
+    tags = kw + q + paper_tags + other
+    return [("score", build_sidebar_stars_html(paper.get("llm_score")))] + tags
 
 
 def ensure_text_content(pdf_url: str, txt_path: str) -> str:
@@ -750,6 +796,13 @@ def update_sidebar(
     deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
     quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
 ) -> None:
+    def render_sidebar_tag(kind: str, label: str) -> str:
+        safe_kind = html.escape(kind or "other")
+        if kind == "score":
+            # label 为内嵌 HTML（星星），上游已对 title 等字段做 escape，这里不再二次转义
+            return f'<span class="dpr-sidebar-tag dpr-sidebar-tag-{safe_kind}">{label}</span>'
+        return f'<span class="dpr-sidebar-tag dpr-sidebar-tag-{safe_kind}">{html.escape(label)}</span>'
+
     date_label = format_date_str(date_str)
     day_heading = f"  * {date_label}\n"
 
@@ -791,10 +844,7 @@ def update_sidebar(
     for paper_id, title, tags in deep_entries:
         safe_title = html.escape((title or "").strip() or paper_id)
         href = f"#/{paper_id}"
-        tag_html = " ".join(
-            f'<span class="dpr-sidebar-tag dpr-sidebar-tag-{html.escape(kind)}">{html.escape(label)}</span>'
-            for kind, label in (tags or [])
-        )
+        tag_html = " ".join(render_sidebar_tag(kind, label) for kind, label in (tags or []))
         tags_block = f'<div class="dpr-sidebar-tags">{tag_html}</div>' if tag_html else ""
         block.append(
             "      * "
@@ -805,10 +855,7 @@ def update_sidebar(
     for paper_id, title, tags in quick_entries:
         safe_title = html.escape((title or "").strip() or paper_id)
         href = f"#/{paper_id}"
-        tag_html = " ".join(
-            f'<span class="dpr-sidebar-tag dpr-sidebar-tag-{html.escape(kind)}">{html.escape(label)}</span>'
-            for kind, label in (tags or [])
-        )
+        tag_html = " ".join(render_sidebar_tag(kind, label) for kind, label in (tags or []))
         tags_block = f'<div class="dpr-sidebar-tags">{tag_html}</div>' if tag_html else ""
         block.append(
             "      * "

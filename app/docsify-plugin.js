@@ -607,6 +607,10 @@ window.$docsify = {
             state[rawText] = collapsed ? 'closed' : 'open';
             state.__latestDay = latestDay;
             ensureStateSaved();
+            // 若当前选中论文位于被折叠的日期下，隐藏选中高亮层，避免“残留高亮”
+            requestAnimationFrame(() => {
+              syncSidebarActiveIndicator({ animate: false });
+            });
           });
 
           li.dataset.dayToggleApplied = '1';
@@ -929,6 +933,33 @@ window.$docsify = {
         return { el: indicator, newlyCreated: true };
       };
 
+      const hideSidebarActiveIndicator = () => {
+        const ensured = ensureSidebarActiveIndicator();
+        if (!ensured || !ensured.el) return;
+        const indicator = ensured.el;
+        indicator.style.opacity = '0';
+        indicator.style.width = '0';
+        indicator.style.height = '0';
+      };
+
+      const showSidebarActiveIndicator = () => {
+        const ensured = ensureSidebarActiveIndicator();
+        if (!ensured || !ensured.el) return;
+        ensured.el.style.opacity = '1';
+      };
+
+      const isSidebarItemVisible = (el) => {
+        try {
+          if (!el) return false;
+          // display:none / 被折叠时 offsetParent 会是 null
+          if (el.offsetParent === null) return false;
+          const rect = el.getBoundingClientRect();
+          return rect && rect.width > 0 && rect.height > 0;
+        } catch {
+          return false;
+        }
+      };
+
       const moveSidebarActiveIndicatorToEl = (li, options = {}) => {
         if (!li) return;
         const { animate = true } = options || {};
@@ -939,6 +970,21 @@ window.$docsify = {
 
         // 只对论文条目启用（避免日期分组标题等）
         if (!li.classList || !li.classList.contains('sidebar-paper-item')) return;
+        // 若该条目在“折叠的日期”之下：隐藏高亮层，避免折叠后仍残留选中背景
+        try {
+          if (li.closest && li.closest('li.sidebar-day-collapsed')) {
+            hideSidebarActiveIndicator();
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        if (!isSidebarItemVisible(li)) {
+          hideSidebarActiveIndicator();
+          return;
+        }
+
+        showSidebarActiveIndicator();
 
         const x = li.offsetLeft;
         const y = li.offsetTop;
@@ -970,6 +1016,18 @@ window.$docsify = {
         if (!link) return;
         const li = link.closest('li');
         moveSidebarActiveIndicatorToEl(li, options);
+      };
+
+      const syncSidebarActiveIndicator = (options = {}) => {
+        const { animate = false } = options || {};
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+        const activeLi = nav.querySelector('li.active.sidebar-paper-item');
+        if (activeLi) {
+          moveSidebarActiveIndicatorToEl(activeLi, { animate });
+        } else {
+          hideSidebarActiveIndicator();
+        }
       };
 
       const DPR_TRANSITION = {
@@ -1535,14 +1593,8 @@ window.$docsify = {
 
         // 让滑动高亮层跟随当前 active 项（点击、路由变化后会更新 active 类）
         try {
-          const nav = document.querySelector('.sidebar-nav');
-          if (nav) {
-            const activeLi = nav.querySelector('li.active.sidebar-paper-item');
-            if (activeLi) {
-              // 路由加载完成后：直接“贴齐”到实际 active 位置，避免出现二次滑动
-              moveSidebarActiveIndicatorToEl(activeLi, { animate: false });
-            }
-          }
+          // 路由加载完成后：贴齐到实际 active 位置；若 active 位于折叠日期下则隐藏高亮层
+          syncSidebarActiveIndicator({ animate: false });
         } catch {
           // ignore
         } finally {
