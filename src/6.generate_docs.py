@@ -1120,6 +1120,158 @@ def update_sidebar(
         f.writelines(lines)
 
 
+def _extract_md_section(md_text: str, heading: str) -> str:
+    """
+    从 Markdown 文本中提取 `## {heading}` 小节内容（直到下一个二级标题）。
+    """
+    if not md_text:
+        return ""
+    marker = f"## {heading}\n"
+    start = md_text.find(marker)
+    if start == -1:
+        return ""
+    after = md_text[start + len(marker) :]
+    # 下一个二级标题
+    m = re.search(r"\n##\s+", after)
+    return (after if not m else after[: m.start()]).strip()
+
+
+def _parse_generated_md_to_meta(md_path: str, paper_id: str, section: str) -> Dict[str, Any]:
+    """
+    从 Step6 已生成的论文 Markdown 中提取可导出的元信息（不引入额外 LLM 调用）。
+    """
+    try:
+        with open(md_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        text = ""
+
+    lines = (text or "").splitlines()
+
+    # 标题：开头连续的 `# ` 行（英文/中文）
+    h1s: List[str] = []
+    for line in lines:
+        m = re.match(r"^#\s+(.*)$", line)
+        if not m:
+            break
+        h1s.append((m.group(1) or "").strip())
+        if len(h1s) >= 2:
+            break
+    title_en = h1s[0] if len(h1s) >= 1 else ""
+
+    meta: Dict[str, str] = {}
+    for line in lines:
+        m = re.match(r"^\*\*([^*]+)\*\*:\s*(.*?)(?:\s*\\\s*)?$", line.strip())
+        if not m:
+            continue
+        k = (m.group(1) or "").strip()
+        v = (m.group(2) or "").strip()
+        if k:
+            meta[k] = v
+
+    # Tags：正文里是 HTML span，导出时提供纯文本版本 + typed 版本（keyword/query/paper）
+    tags_html = meta.get("Tags") or ""
+    tags_typed: List[Dict[str, str]] = []
+    if tags_html:
+        for m in re.finditer(
+            r'<span\s+class="tag-label\s+([^"]+)"[^>]*>(.*?)</span>',
+            tags_html,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            cls = m.group(1) or ""
+            label = re.sub(r"<[^>]+>", "", (m.group(2) or "")).strip()
+            if not label:
+                continue
+            kind = "paper"
+            if "tag-green" in cls:
+                kind = "keyword"
+            elif "tag-blue" in cls:
+                kind = "query"
+            tags_typed.append({"kind": kind, "label": label})
+
+    abstract_en = _extract_md_section(text, "Abstract")
+
+    # 作者：兼容英文逗号与中文逗号
+    authors_raw = meta.get("Authors") or ""
+    authors = [a.strip() for a in re.split(r",|，", authors_raw) if a.strip()]
+    authors_line = ", ".join(authors)
+
+    # tags：输出为更“短”的一行形式（字符串），避免 JSON pretty-print 时每个 tag 独占一行
+    tags_compact: List[str] = []
+    for t in tags_typed:
+        kind = (t.get("kind") or "").strip() or "paper"
+        label = (t.get("label") or "").strip()
+        if not label:
+            continue
+        tags_compact.append(f"{kind}:{label}")
+
+    return {
+        "paper_id": paper_id,
+        "section": section,
+        "title_en": title_en,
+        "authors": authors_line,
+        "date": (meta.get("Date") or "").strip(),
+        "pdf": (meta.get("PDF") or "").strip(),
+        "score": (meta.get("Score") or "").strip(),
+        "evidence": (meta.get("Evidence") or "").strip(),
+        "tldr": (meta.get("TLDR") or "").strip(),
+        "tags": ", ".join(tags_compact),
+        "abstract_en": abstract_en,
+    }
+
+
+def write_day_meta_index_json(
+    docs_dir: str,
+    date_str: str,
+    date_label: str | None,
+    deep_list: List[Dict[str, Any]],
+    quick_list: List[Dict[str, Any]],
+) -> str:
+    """
+    在对应的 docs 日期目录下生成索引 JSON 文件，供前端一键下载。
+    """
+    ym = date_str[:6]
+    day = date_str[6:]
+    target_dir = os.path.join(docs_dir, ym, day)
+    os.makedirs(target_dir, exist_ok=True)
+    out_path = os.path.join(target_dir, "papers.meta.json")
+
+    effective_label = (date_label or "").strip() or format_date_str(date_str)
+
+    papers: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    for section, lst in (("deep", deep_list), ("quick", quick_list)):
+        for paper in lst:
+            try:
+                title = (paper.get("title") or "").strip()
+                arxiv_id = str(paper.get("id") or paper.get("paper_id") or "").strip()
+                md_path, _, pid = prepare_paper_paths(docs_dir, date_str, title, arxiv_id)
+                item = _parse_generated_md_to_meta(md_path, pid, section)
+                papers.append(item)
+            except Exception as e:
+                errors.append(
+                    {
+                        "paper_id": str(paper.get("id") or paper.get("paper_id") or ""),
+                        "error": str(e),
+                    }
+                )
+
+    payload = {
+        "label": effective_label,
+        "date": format_date_str(date_str),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "count": len(papers),
+        "papers": papers,
+        "errors": errors,
+    }
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        # 索引文件用于下载：保持可读的 JSON pretty 格式（每个 paper 一个对象块）
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    return out_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Step 6: generate docs for deep/quick sections.")
     parser.add_argument("--date", type=str, default=TODAY_STR, help="date string YYYYMMDD.")
@@ -1277,6 +1429,21 @@ def main() -> None:
         date_label=args.sidebar_date_label,
     )
     log_substep("6.4", "更新侧边栏", "END")
+
+    log_substep("6.5", "生成可下载元数据索引（JSON）", "START")
+    try:
+        out_path = write_day_meta_index_json(
+            docs_dir,
+            date_str,
+            args.sidebar_date_label,
+            deep_list,
+            quick_list,
+        )
+        log(f"[OK] meta index saved: {out_path}")
+    except Exception as e:
+        log(f"[WARN] 生成元数据索引失败：{e}")
+    log_substep("6.5", "生成可下载元数据索引（JSON）", "END")
+
     log(f"[OK] docs updated: {docs_dir}")
 
 

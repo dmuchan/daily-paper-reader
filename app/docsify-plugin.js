@@ -484,6 +484,77 @@ window.$docsify = {
         const nav = document.querySelector('.sidebar-nav');
         if (!nav) return;
 
+        const joinUrlPath = (a, b) => {
+          const aa = String(a || '');
+          const bb = String(b || '');
+          if (!aa) return bb.replace(/^\/+/, '');
+          if (!bb) return aa;
+          const left = aa.endsWith('/') ? aa : `${aa}/`;
+          const right = bb.replace(/^\/+/, '');
+          return `${left}${right}`;
+        };
+
+        const getDocsifyBasePath = () => {
+          const bp =
+            window.$docsify && typeof window.$docsify.basePath === 'string'
+              ? window.$docsify.basePath
+              : '';
+          return String(bp || '');
+        };
+
+        const getDate8FromDayLi = (li, dayKeyOrLabel) => {
+          // 优先从 HTML comment marker 读取：<!--dpr-date:YYYYMMDD-->
+          try {
+            const nodes = Array.from(li.childNodes || []);
+            for (const n of nodes) {
+              if (n && n.nodeType === Node.COMMENT_NODE) {
+                const m = String(n.textContent || '').match(/dpr-date:(\d{8})/);
+                if (m) return m[1];
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          // 兜底：从 dayKey / label 解析（区间取结束日）
+          const s = String(dayKeyOrLabel || '').trim();
+          const m = s.match(
+            /(\d{4})-(\d{2})-(\d{2})(?:\s*~\s*(\d{4})-(\d{2})-(\d{2}))?$/,
+          );
+          if (!m) return null;
+          if (m[4]) return `${m[4]}${m[5]}${m[6]}`;
+          return `${m[1]}${m[2]}${m[3]}`;
+        };
+
+        const buildDayIndexJsonUrl = (date8) => {
+          const s = String(date8 || '');
+          if (!/^\d{8}$/.test(s)) return null;
+          const ym = s.slice(0, 6);
+          const day = s.slice(6);
+          const rel = `${ym}/${day}/papers.meta.json`;
+          const baseHref = window.location.href.split('#')[0];
+          const fullRel = joinUrlPath(getDocsifyBasePath(), rel);
+          try {
+            return new URL(fullRel, baseHref).toString();
+          } catch {
+            return null;
+          }
+        };
+
+        const downloadJson = (filename, data) => {
+          const blob = new Blob([JSON.stringify(data, null, 2)], {
+            type: 'application/json;charset=utf-8',
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 500);
+        };
+
         const STORAGE_KEY = 'dpr_sidebar_day_state_v1';
         let state = {};
         try {
@@ -626,12 +697,24 @@ window.$docsify = {
             labelSpan.className = 'sidebar-day-toggle-label';
             labelSpan.textContent = rawText;
 
+            const downloadBtn = document.createElement('button');
+            downloadBtn.type = 'button';
+            downloadBtn.className = 'sidebar-day-download-btn';
+            downloadBtn.title = '下载该日期分组下所有论文的元数据（JSON）';
+            downloadBtn.setAttribute('aria-label', '下载论文元数据 JSON');
+            downloadBtn.textContent = 'JSON';
+
             const arrowSpan = document.createElement('span');
             arrowSpan.className = 'sidebar-day-toggle-arrow';
             arrowSpan.textContent = '▾';
 
+            const actions = document.createElement('span');
+            actions.className = 'sidebar-day-toggle-actions';
+            actions.appendChild(downloadBtn);
+            actions.appendChild(arrowSpan);
+
             wrapper.appendChild(labelSpan);
-            wrapper.appendChild(arrowSpan);
+            wrapper.appendChild(actions);
 
             // 用 wrapper 替换原始文本节点
             if (firstTextNode && firstTextNode.parentNode === li) {
@@ -642,6 +725,58 @@ window.$docsify = {
           const labelSpan = wrapper.querySelector('.sidebar-day-toggle-label');
           if (labelSpan) labelSpan.textContent = rawText;
           const arrowSpan = wrapper.querySelector('.sidebar-day-toggle-arrow');
+          const downloadBtn = wrapper.querySelector('.sidebar-day-download-btn');
+
+          if (downloadBtn && !downloadBtn.dataset.dprDownloadBound) {
+            downloadBtn.dataset.dprDownloadBound = '1';
+            downloadBtn.addEventListener(
+              'click',
+              async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                if (downloadBtn.disabled) return;
+
+                const date8 = getDate8FromDayLi(li, dayKey || rawText);
+                const indexUrl = buildDayIndexJsonUrl(date8);
+                if (!indexUrl) {
+                  console.warn('[DPR Export] 无法解析索引 JSON 路径：', {
+                    rawText,
+                    dayKey,
+                    date8,
+                  });
+                  return;
+                }
+
+                downloadBtn.disabled = true;
+                const oldText = downloadBtn.textContent;
+                downloadBtn.textContent = '...';
+                try {
+                  const resp = await fetch(indexUrl, { cache: 'no-store' });
+                  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                  const payload = await resp.json();
+                  window.DPRLastDayExport = payload;
+
+                  const safeLabel = String(rawText || payload.label || 'daily-papers')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .replace(/[^\d\-~_ ]/g, '')
+                    .replace(/\s+/g, '_');
+                  const filename = `${safeLabel || 'daily-papers'}.json`;
+                  downloadJson(filename, payload);
+
+                  downloadBtn.title = `已下载：${payload && payload.count ? payload.count : 0} 篇`;
+                } catch (err) {
+                  downloadBtn.title = `下载失败（见控制台）：${String(err && err.message ? err.message : err)}`;
+                  console.warn('[DPR Export] 下载失败：', err);
+                } finally {
+                  downloadBtn.disabled = false;
+                  downloadBtn.textContent = oldText || 'JSON';
+                }
+              },
+              true,
+            );
+          }
 
           // 决定默认展开 / 收起：
           // - 如果本次是“出现了新的一天”：清空历史，只展开最新一天；
@@ -681,6 +816,15 @@ window.$docsify = {
             wrapper.addEventListener(
               'click',
               (e) => {
+                // 点击“下载 JSON”按钮时，不触发日期折叠（否则 capture 阶段会先被 wrapper 拦截，导致按钮无响应）
+                try {
+                  const target = e && e.target && e.target.closest
+                    ? e.target.closest('.sidebar-day-download-btn')
+                    : null;
+                  if (target) return;
+                } catch {
+                  // ignore
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 if (e.stopImmediatePropagation) e.stopImmediatePropagation();
