@@ -2050,12 +2050,62 @@ window.$docsify = {
 	          });
 	        };
 
-        // 键盘：左右方向键
+        // 通用书签切换函数：数字键 1234 对应 绿蓝紫红
+        const toggleBookmarkForCurrent = (bookmarkType) => {
+          const current = DPR_NAV_STATE.currentHref || '';
+          if (!current) return;
+          const m = current.match(/^#\/(.+)$/);
+          if (!m) return;
+          const paperId = m[1];
+
+          const state = loadReadState();
+          const cur = state[paperId];
+          // 切换：如果当前已是该状态则取消（变为 read），否则设置为该状态
+          if (cur === bookmarkType) {
+            state[paperId] = 'read';
+          } else {
+            state[paperId] = bookmarkType;
+          }
+          saveReadState(state);
+          markSidebarReadState(null);
+          requestAnimationFrame(() => {
+            syncSidebarActiveIndicator({ animate: false });
+          });
+          // 移除所有按钮焦点，避免数字键触发按钮
+          if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
+          }
+        };
+
+        // 键盘：左右方向键 + 数字键 1234
         window.addEventListener('keydown', (e) => {
           const key = e.key || '';
           if (shouldIgnoreKeyNav(e)) return;
+
+          // 数字键 1234：绿蓝紫红书签
+          if (key === '1') {
+            e.preventDefault();
+            toggleBookmarkForCurrent('good');   // 绿色
+            return;
+          }
+          if (key === '2') {
+            e.preventDefault();
+            toggleBookmarkForCurrent('blue');   // 蓝色
+            return;
+          }
+          if (key === '3') {
+            e.preventDefault();
+            toggleBookmarkForCurrent('orange'); // 紫色（橙色）
+            return;
+          }
+          if (key === '4') {
+            e.preventDefault();
+            toggleBookmarkForCurrent('bad');    // 红色
+            return;
+          }
+
           if (key === ' ') {
-            // 空格键：切换“不错（绿色勾）”
+            // 空格键：切换"不错（绿色勾）"
             e.preventDefault();
             toggleGoodForCurrent();
             return;
