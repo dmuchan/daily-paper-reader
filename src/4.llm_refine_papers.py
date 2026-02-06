@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 from llm import BltClient
+from subscription_plan import build_pipeline_inputs
 
 SCRIPT_DIR = os.path.dirname(__file__)
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
@@ -69,9 +70,13 @@ def unique_tagged(items: List[Dict[str, str]], tag_key: str = "tag") -> List[Dic
         tag = (item.get(tag_key) or "").strip()
         if not tag:
             continue
-        if tag in seen:
+        payload_key = (
+            (item.get("keyword") or item.get("query") or item.get("paper_id") or "").strip()
+        )
+        dedup_key = f"{tag}|{payload_key}" if payload_key else tag
+        if dedup_key in seen:
             continue
-        seen.add(tag)
+        seen.add(dedup_key)
         result.append(item)
     return result
 
@@ -80,32 +85,23 @@ def build_context_lists(
     config: Dict[str, Any],
     fallback_queries: List[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
-    subs = (config or {}).get("subscriptions") or {}
     keywords: List[Dict[str, str]] = []
     queries: List[Dict[str, str]] = []
 
-    cfg_keywords = subs.get("keywords") or []
-    if isinstance(cfg_keywords, list):
-        for item in cfg_keywords:
-            if not isinstance(item, dict):
-                continue
-            keyword = (item.get("keyword") or "").strip()
-            tag_label = (item.get("tag") or item.get("alias") or "").strip()
-            if keyword:
-                base = tag_label or keyword
-                keywords.append({"tag": f"keyword:{base}", "keyword": keyword})
-
-    cfg_llm = subs.get("llm_queries") or []
-    if isinstance(cfg_llm, list):
-        for item in cfg_llm:
-            if not isinstance(item, dict):
-                continue
-            rewrite = (item.get("rewrite") or "").strip()
-            tag_label = (item.get("tag") or item.get("alias") or "").strip()
-            query_text = rewrite or (item.get("query") or "").strip()
-            if query_text:
-                base = tag_label or query_text
-                queries.append({"tag": f"query:{base}", "query": query_text})
+    # 优先读取新结构（intent_profiles）统一编译后的上下文
+    pipeline_inputs = build_pipeline_inputs(config or {})
+    for item in pipeline_inputs.get("context_keywords") or []:
+        tag = (item.get("tag") or "").strip()
+        keyword = (item.get("keyword") or "").strip()
+        logic_cn = (item.get("logic_cn") or "").strip()
+        if tag and keyword:
+            keywords.append({"tag": tag, "keyword": keyword, "logic_cn": logic_cn})
+    for item in pipeline_inputs.get("context_queries") or []:
+        tag = (item.get("tag") or "").strip()
+        query_text = (item.get("query") or "").strip()
+        logic_cn = (item.get("logic_cn") or "").strip()
+        if tag and query_text:
+            queries.append({"tag": tag, "query": query_text, "logic_cn": logic_cn})
 
     if not keywords:
         for q in fallback_queries:

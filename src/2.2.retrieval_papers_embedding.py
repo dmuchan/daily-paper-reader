@@ -16,6 +16,7 @@ from typing import Dict, List, Set, Any
 import numpy as np
 
 from filter import EmbeddingCoarseFilter, encode_queries
+from subscription_plan import build_pipeline_inputs
 
 
 # 当前脚本位于 src/ 下，config.yaml 在上一级目录
@@ -109,66 +110,6 @@ def load_config() -> dict:
   except Exception as e:
     log(f"[WARN] 读取 config.yaml 失败：{e}")
     return {}
-
-
-def build_queries_from_config(config: dict) -> List[dict]:
-  """
-  基于 config.yaml 中的 subscriptions.keywords / subscriptions.llm_queries
-  构造查询列表：
-  - 对于 keywords：使用 keyword 作为查询文本，tag 作为标签；
-  - 对于 llm_queries：使用 query 作为查询文本，tag 作为标签。
-  """
-  subs = (config or {}).get("subscriptions") or {}
-
-  queries: List[dict] = []
-
-  # 关键词列表
-  cfg_keywords = subs.get("keywords")
-  if isinstance(cfg_keywords, list):
-    for item in cfg_keywords:
-      if not isinstance(item, dict):
-        continue
-      kw = (item.get("keyword") or "").strip()
-      tag_label = (item.get("tag") or item.get("alias") or "").strip()
-      rewrite = (item.get("rewrite") or "").strip()
-      if not kw:
-        continue
-      base = tag_label or kw
-      # 为 tag 加上来源前缀，便于后续区分（例如 keyword:xxx）
-      paper_tag = f"keyword:{base}"
-      queries.append(
-        {
-          "type": "keyword",
-          "query_text": rewrite or kw,
-          "tag": tag_label,
-          "paper_tag": paper_tag,
-        }
-      )
-
-  # LLM 自然语言查询
-  cfg_llm = subs.get("llm_queries")
-  if isinstance(cfg_llm, list):
-    for item in cfg_llm:
-      if not isinstance(item, dict):
-        continue
-      q = (item.get("query") or "").strip()
-      tag_label = (item.get("tag") or item.get("alias") or "").strip()
-      rewrite = (item.get("rewrite") or "").strip()
-      if not q:
-        continue
-      base = tag_label or (q[:30] + "..." if len(q) > 30 else q)
-      # LLM 自然语言查询使用 query: 前缀
-      paper_tag = f"query:{base}"
-      queries.append(
-        {
-          "type": "llm_query",
-          "query_text": rewrite or q,
-          "tag": tag_label,
-          "paper_tag": paper_tag,
-        }
-      )
-
-  return queries
 
 
 def load_paper_pool(path: str) -> List[Paper]:
@@ -382,9 +323,17 @@ def main() -> None:
   args = parser.parse_args()
 
   config = load_config()
-  queries = build_queries_from_config(config)
+  pipeline_inputs = build_pipeline_inputs(config)
+  queries = pipeline_inputs.get("embedding_queries") or []
+  comparison = pipeline_inputs.get("comparison") or {}
+  if comparison:
+    log(
+      "[INFO] 迁移阶段A输入对比："
+      f"embedding_only_new={comparison.get('embedding_only_new_count', 0)} "
+      f"embedding_only_legacy={comparison.get('embedding_only_legacy_count', 0)}"
+    )
   if not queries:
-    log("[ERROR] 未能从 config.yaml 中解析到 keywords / llm_queries，退出。")
+    log("[ERROR] 未能从订阅配置中解析到 Embedding 查询，退出。")
     return
 
   # 使用 EmbeddingCoarseFilter 类进行粗筛（模型只加载一次）

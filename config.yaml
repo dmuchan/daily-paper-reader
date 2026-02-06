@@ -6,10 +6,84 @@ arxiv_paper_setting:
   days_window: 3
   docs_dir: docs
 subscriptions:
+  schema_migration:
+    stage: A
+    diff_threshold_pct: 15
+  smart_query_prompt_template: |
+    你是一名检索规划助手。
+    用户主题标签: {{TAG}}
+    用户描述: {{USER_DESCRIPTION}}
+    检索链路说明: {{RETRIEVAL_CONTEXT}}
+
+    请输出 JSON：
+    {
+      "keywords": [
+        {
+          "expr": "布尔表达式（可含 AND/OR/NOT/括号/author:）",
+          "logic_cn": "一句中文解释该表达式逻辑",
+          "must_have": ["必须包含概念"],
+          "optional": ["可选扩展概念"],
+          "exclude": ["排除概念"],
+          "rewrite_for_embedding": "去掉布尔符号后的语义表达"
+        }
+      ],
+      "queries": [
+        {
+          "text": "语义查询句子",
+          "logic_cn": "一句中文解释该查询意图"
+        }
+      ]
+    }
+    要求：只输出 JSON，不要输出其它文本。
+  intent_profiles:
+    - id: profile-sr
+      tag: SR
+      description: 符号回归与交叉学科应用
+      enabled: true
+      updated_at: '2026-02-06T00:00:00+00:00'
+      keyword_rules:
+        - id: kw-sr-1
+          expr: Symbolic Regression AND (physics OR astronomy) AND NOT survey
+          logic_cn: 重点关注符号回归在物理或天文中的应用，排除综述类论文。
+          must_have:
+            - Symbolic Regression
+          optional:
+            - physics
+            - astronomy
+          exclude:
+            - survey
+          rewrite_for_embedding: Symbolic regression for physics or astronomy applications
+          enabled: true
+          source: manual
+          note: ''
+      semantic_queries:
+        - id: sq-sr-1
+          text: 帮我找符号回归与其他学科交叉并且有实证实验的最新论文
+          logic_cn: 语义上偏向跨学科和实证验证。
+          enabled: true
+          source: manual
+          note: ''
   keywords:
-    - keyword: Symbolic Regression
+    - keyword: Symbolic Regression AND (physics OR astronomy) AND NOT survey
       tag: SR
+      logic_cn: 重点关注符号回归在物理或天文中的应用，排除综述类论文。
+      must_have:
+        - Symbolic Regression
+      optional:
+        - physics
+        - astronomy
+      exclude:
+        - survey
+      related:
+        - physics
+        - astronomy
+      rewrite: Symbolic regression for physics or astronomy applications
+      enabled: true
+      source: manual
   llm_queries:
-    - query: 帮我去搜一些符号回归相关的论文，可以是符号回归跟其他学科相交叉的论文，可以是符号回归技术创新的论文
+    - query: 帮我找符号回归与其他学科交叉并且有实证实验的最新论文
       tag: SR
+      logic_cn: 语义上偏向跨学科和实证验证。
+      enabled: true
+      source: manual
   tracked_papers: []

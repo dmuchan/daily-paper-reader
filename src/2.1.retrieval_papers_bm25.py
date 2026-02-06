@@ -15,6 +15,16 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Any, Iterable
 
+from query_boolean import (
+  parse_boolean_expr,
+  split_or_branches,
+  evaluate_expr,
+  collect_unique_positive_terms,
+  clean_expr_for_embedding,
+  match_term,
+)
+from subscription_plan import build_pipeline_inputs
+
 
 # 当前脚本位于 src/ 下，config.yaml 在上一级目录
 SCRIPT_DIR = os.path.dirname(__file__)
@@ -30,6 +40,7 @@ TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u4e00-\u9fff]")
 MAIN_TERM_WEIGHT = 1.0
 RELATED_TERM_WEIGHT = 0.5
 QUERY_TEXT_WEIGHT = 0
+DEFAULT_OR_SOFT_WEIGHT = 0.3
 
 
 def log(message: str) -> None:
@@ -271,10 +282,88 @@ def load_paper_pool(path: str) -> List[Paper]:
   return papers
 
 
-def build_bm25_index(papers: List[Paper]) -> BM25Index:
+def build_bm25_index(papers: List[Paper], k1: float = 1.5, b: float = 0.75) -> BM25Index:
   docs = [p.text_for_bm25 for p in papers]
   tokenized = [tokenize(d) for d in docs]
-  return BM25Index(tokenized_docs=tokenized)
+  return BM25Index(tokenized_docs=tokenized, k1=k1, b=b)
+
+
+def score_boolean_mixed_for_query(
+  bm25: BM25Index,
+  papers: List[Paper],
+  expr: str,
+  or_soft_weight: float = DEFAULT_OR_SOFT_WEIGHT,
+  must_have: List[str] | None = None,
+  optional: List[str] | None = None,
+  exclude: List[str] | None = None,
+) -> List[float]:
+  """
+  BM25 布尔混合模式：
+  - AND/NOT：硬约束（不过滤则直接淘汰）；
+  - OR：同一论文命中多个分支时做软增强。
+  """
+  parsed = parse_boolean_expr(expr)
+  if parsed is None:
+    fallback_text = clean_expr_for_embedding(expr) or expr
+    return bm25.score(tokenize(fallback_text))
+
+  branches = split_or_branches(parsed)
+  if not branches:
+    fallback_text = clean_expr_for_embedding(expr) or expr
+    return bm25.score(tokenize(fallback_text))
+
+  branch_terms: List[List[str]] = [collect_unique_positive_terms(b) for b in branches]
+  term_score_cache: Dict[str, List[float]] = {}
+  for terms in branch_terms:
+    for term in terms:
+      key = term.lower()
+      if key in term_score_cache:
+        continue
+      term_score_cache[key] = bm25.score(tokenize(term))
+
+  must_list = [str(x).strip() for x in (must_have or []) if str(x).strip()]
+  optional_list = [str(x).strip() for x in (optional or []) if str(x).strip()]
+  exclude_list = [str(x).strip() for x in (exclude or []) if str(x).strip()]
+
+  scores = [-1.0] * len(papers)
+  for idx, paper in enumerate(papers):
+    title = paper.title or ""
+    abstract = paper.abstract or ""
+    authors = paper.authors or []
+
+    if must_list:
+      if not all(match_term(t, title, abstract, authors) for t in must_list):
+        continue
+    if exclude_list:
+      if any(match_term(t, title, abstract, authors) for t in exclude_list):
+        continue
+
+    passed_branch_scores: List[float] = []
+    for b_idx, branch in enumerate(branches):
+      if not evaluate_expr(branch, title, abstract, authors):
+        continue
+      terms = branch_terms[b_idx]
+      if terms:
+        branch_score = sum(term_score_cache[t.lower()][idx] for t in terms) / max(len(terms), 1)
+      else:
+        branch_score = 1.0
+      passed_branch_scores.append(float(branch_score))
+
+    if not passed_branch_scores:
+      continue
+
+    base = max(passed_branch_scores)
+    extra = max(sum(passed_branch_scores) - base, 0.0)
+    score = base + float(or_soft_weight) * extra
+
+    if optional_list:
+      hits = sum(1 for t in optional_list if match_term(t, title, abstract, authors))
+      if hits > 0:
+        score += 0.1 * hits / len(optional_list)
+
+    scores[idx] = float(score)
+
+  return scores
 
 
 def rank_papers_for_queries(
@@ -314,8 +403,27 @@ def rank_papers_for_queries(
     scores: List[float] | None = None
     total_weight = 0.0
     query_terms = q.get("query_terms") or []
+    boolean_expr = (q.get("boolean_expr") or "").strip()
+    is_boolean_query = bool(boolean_expr) and (q.get("type") == "keyword")
+    query_mode = "normal"
 
-    if isinstance(query_terms, list) and query_terms:
+    if is_boolean_query:
+      query_mode = "boolean_mixed"
+      scores = score_boolean_mixed_for_query(
+        bm25=bm25,
+        papers=papers,
+        expr=boolean_expr,
+        or_soft_weight=float(q.get("or_soft_weight") or DEFAULT_OR_SOFT_WEIGHT),
+        must_have=q.get("must_have") or [],
+        optional=q.get("optional") or [],
+        exclude=q.get("exclude") or [],
+      )
+      valid_candidates = sum(1 for s in scores if s >= 0)
+      log(
+        f"[INFO] BM25 布尔混合模式：valid_candidates={valid_candidates}/{len(scores)}"
+      )
+
+    if (not is_boolean_query) and isinstance(query_terms, list) and query_terms:
       for term in query_terms:
         if not isinstance(term, dict):
           continue
@@ -330,19 +438,24 @@ def rank_papers_for_queries(
           scores[i] += weight * s
         total_weight += weight
 
-    if scores is None:
+    if (not is_boolean_query) and scores is None:
       scores = bm25.score(tokenize(q_text))
       total_weight = 1.0
 
-    if total_weight > 0:
+    if (not is_boolean_query) and total_weight > 0:
       scores = [s / total_weight for s in scores]
 
-    if top_k <= 0 or top_k > len(scores):
-      k = len(scores)
+    if is_boolean_query:
+      candidate_indices = [i for i, s in enumerate(scores) if s >= 0]
+    else:
+      candidate_indices = list(range(len(scores)))
+
+    if top_k <= 0 or top_k > len(candidate_indices):
+      k = len(candidate_indices)
     else:
       k = top_k
 
-    indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
+    indices = sorted(candidate_indices, key=lambda i: scores[i], reverse=True)[:k]
     sim_scores: Dict[str, Dict[str, float | int]] = {}
     for rank_idx, idx in enumerate(indices, start=1):
       pid = paper_ids[idx]
@@ -357,6 +470,9 @@ def rank_papers_for_queries(
         "tag": q.get("tag"),
         "paper_tag": q.get("paper_tag"),
         "query_text": q_text,
+        "logic_cn": q.get("logic_cn") or "",
+        "boolean_expr": boolean_expr if is_boolean_query else "",
+        "bm25_mode": query_mode,
         "sim_scores": sim_scores,
       }
     )
@@ -447,9 +563,19 @@ def main() -> None:
   args = parser.parse_args()
 
   config = load_config()
-  queries = build_queries_from_config(config)
+  pipeline_inputs = build_pipeline_inputs(config)
+  queries = pipeline_inputs.get("bm25_queries") or []
+  comparison = pipeline_inputs.get("comparison") or {}
+  if comparison:
+    log(
+      "[INFO] 迁移阶段A输入对比："
+      f"bm25_only_new={comparison.get('bm25_only_new_count', 0)} "
+      f"bm25_only_legacy={comparison.get('bm25_only_legacy_count', 0)} "
+      f"embedding_only_new={comparison.get('embedding_only_new_count', 0)} "
+      f"embedding_only_legacy={comparison.get('embedding_only_legacy_count', 0)}"
+    )
   if not queries:
-    log("[ERROR] 未能从 config.yaml 中解析到 keywords / llm_queries，退出。")
+    log("[ERROR] 未能从订阅配置中解析到 BM25 查询，退出。")
     return
 
   def process_single_file(input_path: str, output_path: str) -> None:
@@ -478,7 +604,7 @@ def main() -> None:
 
     group_start(f"Step 2.1 - build BM25 index ({os.path.basename(input_path)})")
     log(f"[INFO] 正在为 {total_papers} 篇论文构建 BM25 索引...")
-    bm25 = build_bm25_index(papers)
+    bm25 = build_bm25_index(papers, k1=float(args.k1), b=float(args.b))
     group_end()
 
     group_start(f"Step 2.1 - rank queries ({os.path.basename(input_path)})")

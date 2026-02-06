@@ -1,18 +1,320 @@
-// 订阅管理总模块（浮层壳 + 搜索 + 分发到各子模块）
-// 负责：创建订阅管理浮层、Arxiv 搜索、调用关键词/Zotero/跟踪模块、对接 GitHub Token 模块
+// 订阅管理总模块（统一智能 Query + 禁用引用模块）
+// 负责：
+// 1) 维护本地草稿配置
+// 2) 统一渲染 intent_profiles
+// 3) 保存前双写兼容（自动镜像到 keywords / llm_queries）
 
 window.SubscriptionsManager = (function () {
   let overlay = null;
   let panel = null;
-  let input = null;
-  let searchBtn = null;
   let saveBtn = null;
   let closeBtn = null;
-  let resultsEl = null;
   let msgEl = null;
-  let lastSearchTs = 0;
-  let hasUnsavedChanges = false;
+
   let draftConfig = null;
+  let hasUnsavedChanges = false;
+
+  const defaultPromptTemplate = [
+    '你是一名检索规划助手。',
+    '用户主题标签: {{TAG}}',
+    '用户描述: {{USER_DESCRIPTION}}',
+    '检索链路说明: {{RETRIEVAL_CONTEXT}}',
+    '',
+    '请输出 JSON：',
+    '{',
+    '  "keywords": [',
+    '    {',
+    '      "expr": "布尔表达式（可含 AND/OR/NOT/括号/author:）",',
+    '      "logic_cn": "一句中文解释该表达式逻辑",',
+    '      "must_have": ["必须包含概念"],',
+    '      "optional": ["可选扩展概念"],',
+    '      "exclude": ["排除概念"],',
+    '      "rewrite_for_embedding": "去掉布尔符号后的语义表达"',
+    '    }',
+    '  ],',
+    '  "queries": [',
+    '    {',
+    '      "text": "语义查询句子",',
+    '      "logic_cn": "一句中文解释该查询意图"',
+    '    }',
+    '  ]',
+    '}',
+    '要求：只输出 JSON，不要输出其它文本。',
+  ].join('\n');
+
+  const normalizeText = (v) => String(v || '').trim();
+
+  const cloneDeep = (obj) => {
+    try {
+      return JSON.parse(JSON.stringify(obj || {}));
+    } catch {
+      return obj || {};
+    }
+  };
+
+  const uniqList = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    const seen = new Set();
+    const out = [];
+    list.forEach((item) => {
+      const t = normalizeText(item);
+      if (!t) return;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(t);
+    });
+    return out;
+  };
+
+  const hasBooleanSyntax = (text) => {
+    const s = normalizeText(text);
+    if (!s) return false;
+    if (s.includes('(') || s.includes(')')) return true;
+    return /\b(AND|OR|NOT)\b|&&|\|\||!/.test(s.toUpperCase());
+  };
+
+  const cleanBooleanForEmbedding = (expr) => {
+    let s = normalizeText(expr);
+    if (!s) return '';
+    s = s.replace(/\(/g, ' ').replace(/\)/g, ' ');
+    s = s.replace(/\bAND\b|\bOR\b|\bNOT\b|&&|\|\||!/gi, ' ');
+    s = s.replace(/\bauthor\s*:\s*/gi, ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  };
+
+  const normalizeProfiles = (subs) => {
+    const profiles = Array.isArray(subs.intent_profiles) ? subs.intent_profiles : [];
+    return profiles
+      .map((p, idx) => {
+        if (!p || typeof p !== 'object') return null;
+        const id = normalizeText(p.id) || `profile-${idx + 1}`;
+        const tag = normalizeText(p.tag) || id;
+        const description = normalizeText(p.description || '');
+        const enabled = p.enabled !== false;
+
+        const keywordRules = (Array.isArray(p.keyword_rules) ? p.keyword_rules : [])
+          .map((k, kIdx) => {
+            if (!k || typeof k !== 'object') return null;
+            const expr = normalizeText(k.expr || k.keyword || '');
+            if (!expr) return null;
+            const rewrite =
+              normalizeText(k.rewrite_for_embedding || '') ||
+              (hasBooleanSyntax(expr) ? cleanBooleanForEmbedding(expr) : expr);
+            return {
+              id: normalizeText(k.id) || `${id}-kw-${kIdx + 1}`,
+              expr,
+              logic_cn: normalizeText(k.logic_cn || ''),
+              must_have: uniqList(k.must_have),
+              optional: uniqList(k.optional),
+              exclude: uniqList(k.exclude),
+              rewrite_for_embedding: rewrite,
+              enabled: k.enabled !== false,
+              source: normalizeText(k.source || 'manual'),
+              note: normalizeText(k.note || ''),
+            };
+          })
+          .filter(Boolean);
+
+        const semanticQueries = (Array.isArray(p.semantic_queries) ? p.semantic_queries : [])
+          .map((q, qIdx) => {
+            if (!q || typeof q !== 'object') return null;
+            const text = normalizeText(q.text || q.query || '');
+            if (!text) return null;
+            return {
+              id: normalizeText(q.id) || `${id}-q-${qIdx + 1}`,
+              text,
+              logic_cn: normalizeText(q.logic_cn || ''),
+              enabled: q.enabled !== false,
+              source: normalizeText(q.source || 'manual'),
+              note: normalizeText(q.note || ''),
+            };
+          })
+          .filter(Boolean);
+
+        return {
+          id,
+          tag,
+          description,
+          enabled,
+          keyword_rules: keywordRules,
+          semantic_queries: semanticQueries,
+          updated_at: normalizeText(p.updated_at) || new Date().toISOString(),
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const migrateLegacyToProfilesIfNeeded = (subs) => {
+    const existingProfiles = normalizeProfiles(subs);
+    if (existingProfiles.length > 0) {
+      subs.intent_profiles = existingProfiles;
+      return subs;
+    }
+
+    const profilesByTag = {};
+    const ensureProfile = (tag) => {
+      const key = normalizeText(tag) || 'default';
+      if (!profilesByTag[key]) {
+        profilesByTag[key] = {
+          id: `profile-${Object.keys(profilesByTag).length + 1}`,
+          tag: key,
+          description: '',
+          enabled: true,
+          keyword_rules: [],
+          semantic_queries: [],
+          updated_at: new Date().toISOString(),
+        };
+      }
+      return profilesByTag[key];
+    };
+
+    const keywords = Array.isArray(subs.keywords) ? subs.keywords : [];
+    keywords.forEach((item) => {
+      if (typeof item === 'string') {
+        const kw = normalizeText(item);
+        if (!kw) return;
+        const p = ensureProfile('default');
+        p.keyword_rules.push({
+          id: `kw-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          expr: kw,
+          logic_cn: '',
+          must_have: [],
+          optional: [],
+          exclude: [],
+          rewrite_for_embedding: hasBooleanSyntax(kw)
+            ? cleanBooleanForEmbedding(kw)
+            : kw,
+          enabled: true,
+          source: 'legacy',
+          note: '',
+        });
+        return;
+      }
+      if (!item || typeof item !== 'object') return;
+      const kw = normalizeText(item.keyword || '');
+      if (!kw) return;
+      const tag = normalizeText(item.tag || item.alias || 'default');
+      const p = ensureProfile(tag);
+      p.keyword_rules.push({
+        id: `kw-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        expr: kw,
+        logic_cn: normalizeText(item.logic_cn || ''),
+        must_have: uniqList(item.must_have),
+        optional: uniqList(item.optional || item.related),
+        exclude: uniqList(item.exclude),
+        rewrite_for_embedding:
+          normalizeText(item.rewrite || '') ||
+          (hasBooleanSyntax(kw) ? cleanBooleanForEmbedding(kw) : kw),
+        enabled: item.enabled !== false,
+        source: 'legacy',
+        note: '',
+      });
+    });
+
+    const queries = Array.isArray(subs.llm_queries) ? subs.llm_queries : [];
+    queries.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const q = normalizeText(item.query || '');
+      if (!q) return;
+      const tag = normalizeText(item.tag || item.alias || 'default');
+      const p = ensureProfile(tag);
+      p.semantic_queries.push({
+        id: `q-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        text: q,
+        logic_cn: normalizeText(item.logic_cn || ''),
+        enabled: item.enabled !== false,
+        source: 'legacy',
+        note: '',
+      });
+    });
+
+    subs.intent_profiles = Object.values(profilesByTag);
+    return subs;
+  };
+
+  const compileLegacyMirrorFromProfiles = (subs) => {
+    const profiles = normalizeProfiles(subs);
+    const keywords = [];
+    const llmQueries = [];
+
+    profiles.forEach((p) => {
+      if (p.enabled === false) return;
+      const tag = normalizeText(p.tag || '');
+      if (!tag) return;
+
+      (Array.isArray(p.keyword_rules) ? p.keyword_rules : []).forEach((k) => {
+        if (k.enabled === false) return;
+        const expr = normalizeText(k.expr || '');
+        if (!expr) return;
+        keywords.push({
+          keyword: expr,
+          tag,
+          logic_cn: normalizeText(k.logic_cn || ''),
+          must_have: uniqList(k.must_have),
+          optional: uniqList(k.optional),
+          exclude: uniqList(k.exclude),
+          related: uniqList(k.optional),
+          rewrite:
+            normalizeText(k.rewrite_for_embedding || '') ||
+            (hasBooleanSyntax(expr) ? cleanBooleanForEmbedding(expr) : expr),
+          enabled: k.enabled !== false,
+          source: normalizeText(k.source || 'manual'),
+        });
+      });
+
+      (Array.isArray(p.semantic_queries) ? p.semantic_queries : []).forEach((q) => {
+        if (q.enabled === false) return;
+        const text = normalizeText(q.text || '');
+        if (!text) return;
+        llmQueries.push({
+          query: text,
+          tag,
+          logic_cn: normalizeText(q.logic_cn || ''),
+          enabled: q.enabled !== false,
+          source: normalizeText(q.source || 'manual'),
+        });
+      });
+    });
+
+    subs.keywords = keywords;
+    subs.llm_queries = llmQueries;
+    return subs;
+  };
+
+  const normalizeSubscriptions = (config) => {
+    const next = cloneDeep(config || {});
+    if (!next.subscriptions) next.subscriptions = {};
+    const subs = next.subscriptions;
+
+    migrateLegacyToProfilesIfNeeded(subs);
+    subs.intent_profiles = normalizeProfiles(subs);
+
+    if (!subs.schema_migration || typeof subs.schema_migration !== 'object') {
+      subs.schema_migration = {};
+    }
+    if (!normalizeText(subs.schema_migration.stage)) {
+      subs.schema_migration.stage = 'A';
+    }
+    if (!normalizeText(subs.schema_migration.diff_threshold_pct)) {
+      subs.schema_migration.diff_threshold_pct = 15;
+    }
+
+    if (!normalizeText(subs.smart_query_prompt_template)) {
+      subs.smart_query_prompt_template = defaultPromptTemplate;
+    }
+
+    compileLegacyMirrorFromProfiles(subs);
+    next.subscriptions = subs;
+    return next;
+  };
+
+  const setMessage = (text, color) => {
+    if (!msgEl) return;
+    msgEl.textContent = text || '';
+    msgEl.style.color = color || '#666';
+  };
 
   const ensureOverlay = () => {
     if (overlay && panel) return;
@@ -36,173 +338,53 @@ window.SubscriptionsManager = (function () {
           </div>
         </div>
 
-        <div id="arxiv-subscriptions">
-          <div id="arxiv-top-row">
-            <div id="arxiv-keywords-pane" class="arxiv-pane">
-              <div style="font-weight:500; margin-bottom:4px;">
-                订阅关键词
-                <span
-                  class="arxiv-tip"
-                  data-tip="占位说明：这里可以展示订阅关键词的使用说明。"
-                  style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:4px; border-radius:50%; border:1px solid #999; font-size:11px; line-height:16px; color:#666; cursor:default; position:relative; vertical-align:middle; transform: translateY(-3px);"
-                >!</span>
-              </div>
-              <div id="arxiv-keywords-list" style="font-size:12px; height:130px; overflow-y:auto; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:4px;"></div>
-              <div style="display:flex; gap:4px; margin-top:auto; align-items:center; max-width:100%;">
-                <input id="arxiv-keyword-input" type="text"
-                  placeholder="新增关键词，如 llm"
-                  style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
-                />
-                <input id="arxiv-keyword-alias-input" type="text"
-                  placeholder="标签（必填）"
-                  required
-                  style="flex:2 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
-                />
-                <button id="arxiv-keyword-add-btn" class="arxiv-tool-btn"
-                  style="flex:1 1 0; min-width:0; white-space:nowrap; padding:6px 4px; font-size:12px;">新增</button>
-              </div>
-            </div>
+        <div id="dpr-smart-query-section" class="arxiv-pane dpr-smart-pane">
+          <div class="dpr-smart-head">统一智能 Query 决策</div>
 
-            <div id="arxiv-zotero-pane" class="arxiv-pane">
-              <div style="font-weight:500; margin-bottom:4px;">
-                智能订阅（LLM Query）
-                <span
-                  class="arxiv-tip"
-                  data-tip="占位说明：这里可以展示智能订阅（LLM Query）的配置建议。"
-                  style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:4px; border-radius:50%; border:1px solid #999; font-size:11px; line-height:16px; color:#666; cursor:default; position:relative; vertical-align:middle; transform: translateY(-3px);"
-                >!</span>
-              </div>
-              <div id="zotero-list" style="font-size:12px; height:130px; overflow-y:auto; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:4px;"></div>
-              <div style="display:flex; gap:4px; margin-top:auto; align-items:center; max-width:100%;">
-                <input id="zotero-id-input" type="text"
-                  placeholder="输入偏好描述 / 查询语句，如: small LLM for code"
-                  style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
-                />
-                <input id="zotero-alias-input" type="text"
-                  placeholder="标签（必填）"
-                  required
-                  style="flex:1 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
-                />
-                <button id="zotero-add-btn" class="arxiv-tool-btn"
-                  style="flex:1 1 0; min-width:0; white-space:nowrap; padding:6px 4px; font-size:12px;">新增</button>
-              </div>
+          <div class="dpr-input-card">
+            <div class="dpr-card-title">智能输入区</div>
+            <div class="dpr-inline-row">
+              <input id="dpr-sq-tag" type="text" placeholder="标签（必填），例如 SR" />
+              <button id="dpr-sq-create-btn" class="arxiv-tool-btn" style="background:#2e7d32; color:#fff;">新增</button>
             </div>
+            <textarea id="dpr-sq-desc" rows="3" placeholder="输入用户描述：例如 我关注符号回归与科学发现交叉方向，偏向近期可复现实证研究。"></textarea>
+          </div>
+
+          <div class="dpr-display-card">
+            <div class="dpr-card-title">展示区</div>
+            <div id="dpr-sq-display" class="dpr-sq-display"></div>
           </div>
         </div>
 
-        <div id="arxiv-search-section" class="arxiv-pane">
-          <div style="font-weight:500; margin-bottom:4px;">
-            订阅论文新引用
-            <span
-              class="arxiv-tip"
-              data-tip="占位说明：这里可以展示如何使用 Semantic Scholar ID 跟踪新引用。"
-              style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:4px; border-radius:50%; border:1px solid #999; font-size:11px; line-height:16px; color:#666; cursor:default; position:relative; vertical-align:middle; transform: translateY(-3px);"
-            >!</span>
+        <div id="dpr-tracked-disabled" class="arxiv-pane dpr-disabled-pane">
+          <div style="font-weight:600; margin-bottom:6px;">新增论文引用（暂未实现）</div>
+          <div style="font-size:12px; color:#666; line-height:1.6;">
+            该模块已按当前改造方案禁用为只读提示，不再提供搜索与写入操作。
+            历史 tracked_papers 数据会保留在配置中，不会被自动删除。
           </div>
-          <div id="arxiv-tracked-list" style="font-size:12px; height:130px; overflow-y:auto; overflow-x:hidden; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:8px;"></div>
-
-          <div style="display:flex; gap:4px; margin-bottom:4px; max-width:100%;">
-            <input id="arxiv-search-input" type="text"
-              placeholder="输入 Arxiv 关键词或链接"
-              style="flex:1 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
-            />
-            <button id="arxiv-search-btn" class="arxiv-tool-btn" style="flex:0 0 auto; padding:6px 10px; font-size:12px; white-space:nowrap;">搜索</button>
-          </div>
-          <div id="arxiv-search-msg" style="font-size:12px; color:#666; margin-bottom:4px;">提示：3 秒内只能搜索一次</div>
-          <div id="arxiv-search-results"></div>
         </div>
+
+        <div id="dpr-smart-msg" style="font-size:12px; color:#666; margin-top:10px;">提示：修改后点击「保存」才会写入 config.yaml。</div>
       </div>
     `;
 
     document.body.appendChild(overlay);
     panel = document.getElementById('arxiv-search-panel');
 
-    // 初始化标题处的小提示气泡
-    const initTips = () => {
-      let tipEl = document.getElementById('arxiv-tip-popup');
-      if (!tipEl) {
-        tipEl = document.createElement('div');
-        tipEl.id = 'arxiv-tip-popup';
-        tipEl.style.position = 'fixed';
-        tipEl.style.zIndex = '9999';
-        tipEl.style.padding = '6px 8px';
-        tipEl.style.fontSize = '11px';
-        tipEl.style.borderRadius = '4px';
-        tipEl.style.background = 'rgba(0,0,0,0.78)';
-        tipEl.style.color = '#fff';
-        tipEl.style.pointerEvents = 'none';
-        tipEl.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
-        tipEl.style.maxWidth = '260px';
-        tipEl.style.lineHeight = '1.4';
-        tipEl.style.display = 'none';
-        document.body.appendChild(tipEl);
-      }
-
-      const showTip = (e) => {
-        const target = e.currentTarget;
-        const text = target.getAttribute('data-tip') || '';
-        if (!text) return;
-        tipEl.textContent = text;
-        const rect = target.getBoundingClientRect();
-        const top = rect.bottom + 6;
-        const left = rect.left;
-        tipEl.style.top = `${top}px`;
-        tipEl.style.left = `${left}px`;
-        tipEl.style.display = 'block';
-      };
-
-      const hideTip = () => {
-        tipEl.style.display = 'none';
-      };
-
-      panel.querySelectorAll('.arxiv-tip').forEach((el) => {
-        if (el._tipBound) return;
-        el._tipBound = true;
-        el.addEventListener('mouseenter', showTip);
-        el.addEventListener('mouseleave', hideTip);
-      });
-    };
-    initTips();
-
-    // 绑定基础 DOM 引用
-    input = document.getElementById('arxiv-search-input');
-    searchBtn = document.getElementById('arxiv-search-btn');
     saveBtn = document.getElementById('arxiv-config-save-btn');
     closeBtn = document.getElementById('arxiv-search-close-btn');
-    resultsEl = document.getElementById('arxiv-search-results');
-    msgEl = document.getElementById('arxiv-search-msg');
+    msgEl = document.getElementById('dpr-smart-msg');
 
     const reloadAll = () => {
-      // 仅基于本地草稿配置重新渲染，不触发远程加载
       renderFromDraft();
     };
 
-    // 交给子模块管理各自区域
-    if (window.SubscriptionsKeywords) {
-      window.SubscriptionsKeywords.attach({
-        keywordsListEl: document.getElementById('arxiv-keywords-list'),
-        keywordInput: document.getElementById('arxiv-keyword-input'),
-        keywordAliasInput: document.getElementById('arxiv-keyword-alias-input'),
-        keywordAddBtn: document.getElementById('arxiv-keyword-add-btn'),
-        msgEl,
-        reloadAll,
-      });
-    }
-
-    if (window.SubscriptionsZotero) {
-      window.SubscriptionsZotero.attach({
-        zoteroListEl: document.getElementById('zotero-list'),
-        zoteroIdInput: document.getElementById('zotero-id-input'),
-        zoteroAliasInput: document.getElementById('zotero-alias-input'),
-        zoteroAddBtn: document.getElementById('zotero-add-btn'),
-        msgEl,
-        reloadAll,
-      });
-    }
-
-    if (window.SubscriptionsTrackedPapers) {
-      window.SubscriptionsTrackedPapers.attach({
-        trackedListEl: document.getElementById('arxiv-tracked-list'),
+    if (window.SubscriptionsSmartQuery) {
+      window.SubscriptionsSmartQuery.attach({
+        displayListEl: document.getElementById('dpr-sq-display'),
+        createBtn: document.getElementById('dpr-sq-create-btn'),
+        tagInputEl: document.getElementById('dpr-sq-tag'),
+        descInputEl: document.getElementById('dpr-sq-desc'),
         msgEl,
         reloadAll,
       });
@@ -211,28 +393,49 @@ window.SubscriptionsManager = (function () {
     bindBaseEvents();
   };
 
-  const openOverlay = () => {
-    ensureOverlay();
-    if (!overlay) return;
-    overlay.style.display = 'flex';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        overlay.classList.add('show');
-      });
-    });
-    if (msgEl) {
-      msgEl.textContent = '提示：3 秒内只能搜索一次';
-      msgEl.style.color = '#666';
+  const renderFromDraft = () => {
+    const cfg = draftConfig || {};
+    const subs = (cfg && cfg.subscriptions) || {};
+    const profiles = Array.isArray(subs.intent_profiles) ? subs.intent_profiles : [];
+    if (window.SubscriptionsSmartQuery && window.SubscriptionsSmartQuery.render) {
+      window.SubscriptionsSmartQuery.render(profiles);
     }
-    if (resultsEl) {
-      resultsEl.innerHTML = '';
-    }
-    // 打开面板时，如本地尚无草稿配置，则从远端拉取一次；
-    // 若已存在草稿，则直接渲染草稿，避免每次打开都触发远程请求。
-    if (draftConfig) {
+  };
+
+  const loadSubscriptions = async () => {
+    try {
+      if (!window.SubscriptionsGithubToken || !window.SubscriptionsGithubToken.loadConfig) {
+        throw new Error('SubscriptionsGithubToken.loadConfig 不可用');
+      }
+      const { config } = await window.SubscriptionsGithubToken.loadConfig();
+      draftConfig = normalizeSubscriptions(config || {});
+      hasUnsavedChanges = false;
       renderFromDraft();
-    } else {
-      loadSubscriptions();
+      setMessage('已加载配置，可开始编辑。', '#666');
+    } catch (e) {
+      console.error(e);
+      setMessage('加载配置失败，请确认 GitHub Token 可用。', '#c00');
+    }
+  };
+
+  const saveDraftConfig = async () => {
+    if (!window.SubscriptionsGithubToken || !window.SubscriptionsGithubToken.saveConfig) {
+      setMessage('当前无法保存配置，请先完成 GitHub 登录。', '#c00');
+      return;
+    }
+    try {
+      setMessage('正在保存配置...', '#666');
+      const toSave = normalizeSubscriptions(draftConfig || {});
+      await window.SubscriptionsGithubToken.saveConfig(
+        toSave,
+        'chore: save smart query config from dashboard',
+      );
+      draftConfig = toSave;
+      hasUnsavedChanges = false;
+      setMessage('配置已保存。', '#080');
+    } catch (e) {
+      console.error(e);
+      setMessage('保存配置失败，请稍后重试。', '#c00');
     }
   };
 
@@ -244,407 +447,30 @@ window.SubscriptionsManager = (function () {
     }, 300);
   };
 
-  const showUnsavedDialog = () => {
-    if (!overlay) return;
-    let dialog = document.getElementById('arxiv-unsaved-dialog');
-    if (!dialog) {
-      dialog = document.createElement('div');
-      dialog.id = 'arxiv-unsaved-dialog';
-      dialog.style.position = 'fixed';
-      dialog.style.top = '0';
-      dialog.style.left = '0';
-      dialog.style.right = '0';
-      dialog.style.bottom = '0';
-      dialog.style.display = 'flex';
-      dialog.style.alignItems = 'center';
-      dialog.style.justifyContent = 'center';
-      dialog.style.background = 'rgba(0,0,0,0.35)';
-      dialog.style.zIndex = '9999';
-      dialog.innerHTML = `
-        <div style="background:#fff; padding:16px 20px; border-radius:8px; max-width:320px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:13px;">
-          <div style="font-weight:600; margin-bottom:8px;">配置尚未保存</div>
-          <div style="margin-bottom:12px; color:#555; line-height:1.5;">
-            检测到订阅配置有变更但尚未保存，你希望如何处理？
-          </div>
-          <div style="display:flex; justify-content:flex-end; gap:8px;">
-            <button id="arxiv-unsaved-discard" class="arxiv-tool-btn" style="padding:6px 10px; font-size:12px;">直接关闭</button>
-            <button id="arxiv-unsaved-save-exit" class="arxiv-tool-btn" style="padding:6px 10px; font-size:12px; background:#2e7d32; color:#fff;">退出并保存</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(dialog);
-
-      const discardBtn = dialog.querySelector('#arxiv-unsaved-discard');
-      const saveExitBtn = dialog.querySelector('#arxiv-unsaved-save-exit');
-
-      if (discardBtn && !discardBtn._bound) {
-        discardBtn._bound = true;
-        discardBtn.addEventListener('click', () => {
-          // 丢弃本地草稿中的未保存修改，下次打开将重新从远端加载
-          draftConfig = null;
-          hasUnsavedChanges = false;
-          dialog.style.display = 'none';
-          reallyCloseOverlay();
-        });
-      }
-
-      if (saveExitBtn && !saveExitBtn._bound) {
-        saveExitBtn._bound = true;
-        saveExitBtn.addEventListener('click', async () => {
-          if (
-            !window.SubscriptionsGithubToken ||
-            !window.SubscriptionsGithubToken.saveConfig
-          ) {
-            if (msgEl) {
-              msgEl.textContent = '当前无法保存配置，请先完成 GitHub 登录。';
-              msgEl.style.color = '#c00';
-            }
-            return;
-          }
-          try {
-            if (msgEl) {
-              msgEl.textContent = '正在保存配置...';
-              msgEl.style.color = '#666';
-            }
-            await window.SubscriptionsGithubToken.saveConfig(
-              draftConfig || {},
-              'chore: save dashboard config when closing panel',
-            );
-            hasUnsavedChanges = false;
-            dialog.style.display = 'none';
-            if (msgEl) {
-              msgEl.textContent = '配置已保存并关闭。';
-              msgEl.style.color = '#080';
-            }
-            reallyCloseOverlay();
-          } catch (e) {
-            console.error(e);
-            if (msgEl) {
-              msgEl.textContent = '保存配置失败，请稍后重试。';
-              msgEl.style.color = '#c00';
-            }
-          }
-        });
-      }
-    } else {
-      dialog.style.display = 'flex';
-    }
-  };
-
   const closeOverlay = () => {
-    if (!overlay) return;
     if (hasUnsavedChanges) {
-      showUnsavedDialog();
-      return;
+      const ok = window.confirm('检测到未保存修改，确认直接关闭并丢弃本地草稿吗？');
+      if (!ok) return;
+      draftConfig = null;
+      hasUnsavedChanges = false;
     }
     reallyCloseOverlay();
   };
 
-  const renderResults = (items) => {
-    if (!resultsEl) return;
-    if (!items || !items.length) {
-      resultsEl.innerHTML =
-        '<div style="font-size:12px; color:#999;">未找到相关结果，请尝试修改关键词。</div>';
-      return;
-    }
-    resultsEl.innerHTML = '';
-    items.forEach((item, idx) => {
-      const row = document.createElement('div');
-      row.className = 'arxiv-result-item';
-      if (idx === 0) row.classList.add('selected');
-       // 缓存元信息，供后续写入 config.yaml 使用
-       row._meta = {
-         title: item.title || '',
-         authors: item.authors || [],
-         published: item.published || '',
-         arxiv_id: item.arxiv_id || '',
-       };
-      const allAuthors = item.authors || [];
-      const displayAuthors =
-        allAuthors.slice(0, 5).join(', ') +
-        (allAuthors.length > 5 ? ', ...' : '');
-      row.innerHTML = `
-        <input type="radio" name="arxiv-choice" value="${item.arxiv_id}" ${
-          idx === 0 ? 'checked' : ''
-        } style="pointer-events:none; flex-shrink:0;" />
-        <div class="arxiv-result-meta">
-          <div class="arxiv-result-title">${item.title || ''}</div>
-          <div class="arxiv-result-authors">${
-            displayAuthors || ''
-          }</div>
-          <div class="arxiv-result-published">
-            ${item.published ? '发表于：' + item.published : ''}
-            ${
-              item.arxiv_id
-                ? (item.published ? ' ｜ ' : '') + 'arXiv: ' + item.arxiv_id
-                : ''
-            }
-          </div>
-        </div>
-      `;
-
-      if (idx === 0) {
-        const actionDiv = document.createElement('div');
-        actionDiv.className = 'arxiv-result-action-area';
-        actionDiv.innerHTML = `
-          <input type="text" class="arxiv-track-alias-input" placeholder="标签" required />
-          <button class="arxiv-track-btn arxiv-tool-btn">加入后台</button>
-        `;
-        row.appendChild(actionDiv);
-      }
-
-      row.addEventListener('click', (e) => {
-        if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
-        if (e.target.tagName === 'BUTTON') return;
-        resultsEl.querySelectorAll('.arxiv-result-item').forEach((r) => {
-          r.classList.remove('selected');
-          const actionArea = r.querySelector('.arxiv-result-action-area');
-          if (actionArea) actionArea.remove();
-        });
-
-        row.classList.add('selected');
-        const radio = row.querySelector('input[type="radio"]');
-        if (radio) radio.checked = true;
-
-        const actionDiv = document.createElement('div');
-        actionDiv.className = 'arxiv-result-action-area';
-        actionDiv.innerHTML = `
-          <input type="text" class="arxiv-track-alias-input" placeholder="标签" required />
-          <button class="arxiv-track-btn arxiv-tool-btn">加入后台</button>
-        `;
-        row.appendChild(actionDiv);
-        const trackBtn = actionDiv.querySelector('.arxiv-track-btn');
-        trackBtn.addEventListener('click', () => doTrack());
+  const openOverlay = () => {
+    ensureOverlay();
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        overlay.classList.add('show');
       });
-
-      if (idx === 0) {
-        const trackBtn = row.querySelector('.arxiv-track-btn');
-        if (trackBtn) {
-          trackBtn.addEventListener('click', () => doTrack());
-        }
-      }
-
-      resultsEl.appendChild(row);
     });
-  };
 
-  const doSearch = async () => {
-    if (!input || !msgEl || !resultsEl) return;
-    const now = Date.now();
-    if (now - lastSearchTs < 3000) {
-      msgEl.textContent = '搜索过于频繁，请稍后再试（3 秒内只能搜索一次）';
-      msgEl.style.color = '#c00';
-      return;
-    }
-    const q = (input.value || '').trim();
-    if (!q) {
-      msgEl.textContent = '请输入关键词或 arxiv 链接';
-      msgEl.style.color = '#c00';
-      return;
-    }
-    lastSearchTs = now;
-    msgEl.textContent = '搜索中...';
-    msgEl.style.color = '#666';
-    resultsEl.innerHTML = '';
-
-    try {
-      const res = await fetch(
-        `${window.API_BASE_URL}/api/arxiv_search?query=${encodeURIComponent(
-          q,
-        )}`,
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        msgEl.textContent = data.detail || '搜索失败';
-        msgEl.style.color = '#c00';
-        return;
-      }
-      const data = await res.json();
-      renderResults(data.items || []);
-      msgEl.textContent = '搜索完成，可选择一篇论文并点击「加入后台」';
-      msgEl.style.color = '#666';
-    } catch (e) {
-      console.error(e);
-      msgEl.textContent = '搜索失败，请稍后重试';
-      msgEl.style.color = '#c00';
-    }
-  };
-
-  const doTrack = async () => {
-    if (!msgEl) return;
-    const checked = document.querySelector(
-      'input[name="arxiv-choice"]:checked',
-    );
-    if (!checked) {
-      msgEl.textContent = '请先在结果中选中一篇论文';
-      msgEl.style.color = '#c00';
-      return;
-    }
-    const arxivId = checked.value;
-    const selectedRow = checked.closest('.arxiv-result-item');
-    const trackAliasInput = selectedRow
-      ? selectedRow.querySelector('.arxiv-track-alias-input')
-      : null;
-    const tag = ((trackAliasInput && trackAliasInput.value) || '').trim();
-    if (!tag) {
-      msgEl.textContent = '标签为必填项';
-      msgEl.style.color = '#c00';
-      return;
-    }
-    msgEl.textContent = '已加入本地草稿（保存后才会同步到云端）。';
-    msgEl.style.color = '#666';
-    try {
-      // 从当前搜索结果中找到选中的条目，补充元信息
-      let selectedMeta = null;
-      if (resultsEl) {
-        const selectedRow = document.querySelector('.arxiv-result-item.selected');
-        if (selectedRow && selectedRow._meta) {
-          selectedMeta = selectedRow._meta;
-        }
-      }
-
-      // 仅更新本地草稿配置
-      draftConfig = draftConfig || {};
-      if (!draftConfig.subscriptions) draftConfig.subscriptions = {};
-      const subs = draftConfig.subscriptions;
-      const list = Array.isArray(subs.tracked_papers)
-        ? subs.tracked_papers.slice()
-        : [];
-
-      const base = {
-        arxiv_id: arxivId,
-        tag,
-      };
-      if (selectedMeta) {
-        base.title = selectedMeta.title || '';
-        base.authors = selectedMeta.authors || [];
-        base.published = selectedMeta.published || '';
-      }
-
-      const existingIndex = list.findIndex(
-        (x) => x && x.arxiv_id === arxivId,
-      );
-      if (existingIndex >= 0) {
-        list[existingIndex] = Object.assign({}, list[existingIndex], base);
-      } else {
-        list.push(base);
-      }
-
-      subs.tracked_papers = list;
-      draftConfig.subscriptions = subs;
-      hasUnsavedChanges = true;
-
-      // 仅基于草稿重新渲染
+    if (draftConfig) {
       renderFromDraft();
-      const reChecked = document.querySelector(
-        'input[name="arxiv-choice"]:checked',
-      );
-      if (reChecked) {
-        const selRow = reChecked.closest('.arxiv-result-item');
-        const tagInput = selRow
-          ? selRow.querySelector('.arxiv-track-alias-input')
-          : null;
-        if (tagInput) tagInput.value = '';
-      }
-    } catch (e) {
-      console.error(e);
-      msgEl.textContent = '加入后台失败，请稍后重试';
-      msgEl.style.color = '#c00';
-    }
-  };
-
-  const normalizeSubscriptions = (config) => {
-    const next = config || {};
-    if (!next.subscriptions) return next;
-    const subs = next.subscriptions;
-    const normalizeList = (list) =>
-      list.map((item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          return item;
-        }
-        if (!('alias' in item) && !('tag' in item)) {
-          return item;
-        }
-        const tag = item.tag || item.alias || '';
-        const copy = Object.assign({}, item);
-        if (tag) copy.tag = tag;
-        if ('alias' in copy) delete copy.alias;
-        return copy;
-      });
-
-    if (Array.isArray(subs.keywords)) subs.keywords = normalizeList(subs.keywords);
-    if (Array.isArray(subs.llm_queries)) subs.llm_queries = normalizeList(subs.llm_queries);
-    if (Array.isArray(subs.tracked_papers)) subs.tracked_papers = normalizeList(subs.tracked_papers);
-    next.subscriptions = subs;
-    return next;
-  };
-
-  const renderFromDraft = () => {
-    const config = draftConfig || {};
-    const subs = (config && config.subscriptions) || {};
-
-    const keywords = Array.isArray(subs.keywords) ? subs.keywords : [];
-    const llmQueries = Array.isArray(subs.llm_queries) ? subs.llm_queries : [];
-    const trackedPapers = Array.isArray(subs.tracked_papers) ? subs.tracked_papers : [];
-
-    if (window.SubscriptionsKeywords && window.SubscriptionsKeywords.render) {
-      window.SubscriptionsKeywords.render(
-        keywords.map((item, idx) => {
-          if (typeof item === 'string') {
-            return { id: idx, keyword: item, tag: '' };
-          }
-          return {
-            id: idx,
-            keyword: item.keyword || '',
-            tag: item.tag || item.alias || '',
-          };
-        }),
-      );
-    }
-
-    if (window.SubscriptionsTrackedPapers && window.SubscriptionsTrackedPapers.render) {
-      window.SubscriptionsTrackedPapers.render(
-        trackedPapers.map((item, idx) => ({
-          id: idx,
-          arxiv_id: item.arxiv_id || '',
-          tag: item.tag || item.alias || '',
-          title: item.title || '',
-          authors: item.authors || [],
-          published: item.published || '',
-        })),
-      );
-    }
-
-    if (window.SubscriptionsZotero && window.SubscriptionsZotero.render) {
-      window.SubscriptionsZotero.render(
-        llmQueries.map((item, idx) => ({
-          id: idx,
-          zotero_id: item.query || '',
-          tag: item.tag || item.alias || '',
-        })),
-      );
-    }
-  };
-
-  const loadSubscriptions = async () => {
-    try {
-      if (!window.SubscriptionsGithubToken || !window.SubscriptionsGithubToken.loadConfig) {
-        console.warn('SubscriptionsGithubToken.loadConfig 不可用，无法从 config.yaml 加载订阅配置。');
-        return;
-      }
-      const { config } = await window.SubscriptionsGithubToken.loadConfig();
-      // 将远端配置作为本地草稿的基准
-      draftConfig = normalizeSubscriptions(config || {});
-      renderFromDraft();
-
-      // 每次成功从远端加载后，将“未保存变更”标记清零
-      hasUnsavedChanges = false;
-    } catch (e) {
-      console.error('加载订阅配置失败：', e);
-      if (msgEl) {
-        msgEl.textContent = '加载订阅配置失败，请确认已配置 GitHub Token。';
-        msgEl.style.color = '#c00';
-      }
+    } else {
+      loadSubscriptions();
     }
   };
 
@@ -653,52 +479,19 @@ window.SubscriptionsManager = (function () {
       closeBtn._bound = true;
       closeBtn.addEventListener('click', closeOverlay);
     }
+
     if (overlay && !overlay._boundClick) {
       overlay._boundClick = true;
       overlay.addEventListener('mousedown', (e) => {
-        if (e.target === overlay) {
-          closeOverlay();
-        }
+        if (e.target === overlay) closeOverlay();
       });
     }
-    if (searchBtn && !searchBtn._bound) {
-      searchBtn._bound = true;
-      searchBtn.addEventListener('click', doSearch);
-    }
+
     if (saveBtn && !saveBtn._bound) {
       saveBtn._bound = true;
-      saveBtn.addEventListener('click', async () => {
-        if (!window.SubscriptionsGithubToken || !window.SubscriptionsGithubToken.saveConfig) {
-          if (msgEl) {
-            msgEl.textContent = '当前无法保存配置，请先完成 GitHub 登录。';
-            msgEl.style.color = '#c00';
-          }
-          return;
-        }
-        try {
-          if (msgEl) {
-            msgEl.textContent = '正在保存配置...';
-            msgEl.style.color = '#666';
-          }
-          // 使用当前本地草稿配置写入远端
-          await window.SubscriptionsGithubToken.saveConfig(
-            draftConfig || {},
-            'chore: save dashboard config from panel',
-          );
-          hasUnsavedChanges = false;
-          if (msgEl) {
-            msgEl.textContent = '配置已保存。';
-            msgEl.style.color = '#080';
-          }
-        } catch (e) {
-          console.error(e);
-          if (msgEl) {
-            msgEl.textContent = '保存配置失败，请稍后重试。';
-            msgEl.style.color = '#c00';
-          }
-        }
-      });
+      saveBtn.addEventListener('click', saveDraftConfig);
     }
+
     const secretBtn = document.getElementById('arxiv-open-secret-setup-btn');
     if (secretBtn && !secretBtn._bound) {
       secretBtn._bound = true;
@@ -728,15 +521,6 @@ window.SubscriptionsManager = (function () {
         } catch (e) {
           console.error(e);
           alert('打开工作流面板失败，请打开控制台查看错误。');
-        }
-      });
-    }
-    if (input && !input._bound) {
-      input._bound = true;
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-          e.preventDefault();
-          doSearch();
         }
       });
     }
@@ -774,8 +558,11 @@ window.SubscriptionsManager = (function () {
       hasUnsavedChanges = true;
     },
     updateDraftConfig: (updater) => {
-      draftConfig = updater(draftConfig || {}) || draftConfig;
+      const base = draftConfig || {};
+      const next = typeof updater === 'function' ? updater(cloneDeep(base)) || base : base;
+      draftConfig = normalizeSubscriptions(next);
       hasUnsavedChanges = true;
     },
+    getDraftConfig: () => cloneDeep(draftConfig || {}),
   };
 })();

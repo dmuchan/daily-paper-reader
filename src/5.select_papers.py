@@ -8,6 +8,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
+from subscription_plan import count_subscription_tags
+
 SCRIPT_DIR = os.path.dirname(__file__)
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 ARCHIVE_ROOT = os.path.join(ROOT_DIR, "archive")
@@ -181,7 +183,7 @@ def load_recent_carryover(
 
 
 def load_config_tag_count() -> Tuple[int, List[str]]:
-    """读取 config.yaml 中的 tag 数量（去重后）以及 tag 列表。"""
+    """读取订阅配置中的 tag 数量（优先新结构 intent_profiles）。"""
     if not os.path.exists(CONFIG_FILE):
         return 0, []
     try:
@@ -196,39 +198,7 @@ def load_config_tag_count() -> Tuple[int, List[str]]:
     except Exception as exc:
         log(f"[WARN] failed to read config.yaml: {exc}")
         return 0, []
-
-    subs = (data or {}).get("subscriptions") or {}
-    tags: List[str] = []
-
-    def add_tag(value: Any) -> None:
-        text = str(value or "").strip()
-        if text:
-            tags.append(text)
-
-    cfg_keywords = subs.get("keywords") or []
-    if isinstance(cfg_keywords, list):
-        for item in cfg_keywords:
-            if isinstance(item, dict):
-                add_tag(item.get("tag") or item.get("alias") or item.get("keyword"))
-            elif isinstance(item, str):
-                add_tag(item)
-
-    cfg_llm = subs.get("llm_queries") or []
-    if isinstance(cfg_llm, list):
-        for item in cfg_llm:
-            if isinstance(item, dict):
-                add_tag(item.get("tag") or item.get("alias") or item.get("query"))
-            elif isinstance(item, str):
-                add_tag(item)
-
-    unique = []
-    seen = set()
-    for t in tags:
-        if t in seen:
-            continue
-        seen.add(t)
-        unique.append(t)
-    return len(unique), unique
+    return count_subscription_tags(data if isinstance(data, dict) else {})
 
 
 def load_arxiv_paper_setting() -> Dict[str, Any]:

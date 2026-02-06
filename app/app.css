@@ -2619,6 +2619,332 @@ article.markdown-section {
   margin-top: 4px;
 }
 
+/* ========== 统一智能 Query 面板 ========== */
+.dpr-smart-pane {
+  background: #f5f8ff;
+  border: 1px solid #d9e4fb;
+  margin-bottom: 10px;
+}
+.dpr-smart-head {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.dpr-disabled-pane {
+  background: #f8f8f8;
+  border: 1px dashed #d7d7d7;
+}
+
+.dpr-input-card,
+.dpr-display-card {
+  background: #fff;
+  border: 1px solid #e3eaf8;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.dpr-input-card {
+  margin-bottom: 12px;
+}
+
+.dpr-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f5584;
+  margin-bottom: 8px;
+}
+
+.dpr-inline-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.dpr-inline-row input,
+.dpr-inline-row textarea,
+.dpr-input-card textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #ced9ee;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.dpr-input-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 2px;
+  resize: vertical;
+}
+
+.dpr-sq-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dpr-entry-card {
+  background: #f8fbff;
+  border: 1px solid #dbe6fb;
+  border-radius: 8px;
+  padding: 9px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dpr-entry-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-right: 8px;
+}
+
+.dpr-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #28395f;
+  margin-bottom: 2px;
+  word-break: break-word;
+}
+
+.dpr-entry-desc {
+  font-size: 12px;
+  color: #4b5b81;
+  margin-bottom: 2px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.dpr-entry-meta {
+  font-size: 11px;
+  color: #6a7698;
+}
+
+.dpr-entry-actions {
+  flex: 0 0 auto;
+}
+
+.dpr-entry-edit-btn {
+  white-space: nowrap;
+}
+
+.dpr-mini {
+  min-width: 28px;
+  padding: 2px 6px;
+}
+
+/* 智能 Query 新增/编辑弹层 */
+#dpr-sq-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 34, 52, 0.42);
+  z-index: 12000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+#dpr-sq-modal-overlay.show {
+  opacity: 1;
+}
+
+#dpr-sq-modal-panel {
+  width: min(860px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #d9e4fa;
+  box-shadow: 0 18px 50px rgba(24, 37, 68, 0.22);
+  padding: 12px;
+}
+
+.dpr-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dpr-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2f3f67;
+}
+
+.dpr-modal-sub {
+  font-size: 12px;
+  color: #657399;
+  background: #f7faff;
+  border: 1px solid #e3ebfb;
+  border-radius: 6px;
+  padding: 7px 8px;
+  margin-bottom: 8px;
+}
+
+.dpr-modal-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3d5482;
+  margin: 8px 0 6px;
+}
+
+.dpr-modal-list {
+  background: #f9fbff;
+  border: 1px solid #e1e9fa;
+  border-radius: 6px;
+  padding: 7px;
+}
+
+.dpr-modal-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.dpr-modal-choice:last-child {
+  margin-bottom: 0;
+}
+
+.dpr-modal-choice input[type='checkbox'] {
+  margin-top: 2px;
+}
+
+.dpr-modal-choice-title {
+  font-size: 12px;
+  color: #2f4069;
+  line-height: 1.4;
+}
+
+.dpr-modal-choice-desc {
+  font-size: 11px;
+  color: #6a7694;
+  line-height: 1.4;
+}
+
+.dpr-modal-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dpr-modal-actions-inline {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dpr-edit-base {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.dpr-edit-base label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #475a86;
+}
+
+.dpr-edit-base label input[type='text'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #ccdaef;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.dpr-edit-enabled {
+  grid-column: 1 / -1;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+}
+
+.dpr-edit-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto auto;
+  gap: 7px;
+  align-items: start;
+  margin-bottom: 6px;
+}
+
+.dpr-edit-row:last-child {
+  margin-bottom: 0;
+}
+
+.dpr-edit-toggle {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 24px;
+  font-size: 11px;
+  border-radius: 12px;
+  border: 1px solid #d0dbef;
+  color: #5e6f94;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dpr-edit-toggle.on {
+  border-color: #b7d9be;
+  color: #2f7040;
+  background: #edf8ef;
+}
+
+.dpr-edit-toggle.off {
+  border-color: #e2c2c2;
+  color: #9b4e4e;
+  background: #fff4f4;
+}
+
+.dpr-edit-text {
+  font-size: 12px;
+  color: #33486f;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.dpr-edit-sub {
+  font-size: 11px;
+  color: #6e7b99;
+  margin-top: 2px;
+}
+
+@media (max-width: 980px) {
+  .dpr-inline-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dpr-entry-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .dpr-entry-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .dpr-edit-base {
+    grid-template-columns: 1fr;
+  }
+  .dpr-edit-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ========== 论文页面新布局样式 ========== */
 
 /* 标题区域 - 双列 */
