@@ -5,6 +5,16 @@ arxiv_paper_setting:
   mode: standard
   days_window: 3
   docs_dir: docs
+  prefer_supabase_read: true
+
+supabase:
+  enabled: false
+  url: ''
+  anon_key: ''
+  papers_table: arxiv_papers
+  sync_table: arxiv_sync_status
+  sync_success_value: success
+  schema: public
 subscriptions:
   schema_migration:
     stage: A

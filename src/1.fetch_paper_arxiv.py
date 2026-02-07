@@ -4,6 +4,10 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from supabase_source import (
+    get_supabase_read_config,
+    fetch_recent_papers,
+)
 
 # 项目根目录（当前脚本位于 src/ 下）
 SCRIPT_DIR = os.path.dirname(__file__)
@@ -308,11 +312,58 @@ def fetch_all_domains_metadata_robust(
     output_file: str | None = None,
     ignore_seen: bool = False,
     chunk_days: int = 7,
+    disable_supabase_read: bool = False,
 ) -> None:
+    config = load_config()
+
     # 1. 计算时间窗口（优先使用上次抓取时间）
     end_date = datetime.now(timezone.utc)
     if days is None:
         days = resolve_days_window(1)
+
+    # 0) 优先走 Supabase 公共库（无状态模式）
+    # 规则：
+    # - Supabase 访问失败或返回 0 条：回退本地爬取；
+    # - Supabase 返回 >0 条：直接使用数据库结果。
+    sb = get_supabase_read_config(config)
+    if disable_supabase_read:
+        sb["enabled"] = False
+        log("ℹ️ 已关闭 Supabase 优先读取，本次将强制本地 arXiv 抓取。")
+    if sb.get("enabled"):
+        group_start("Step 1 - fetch from Supabase (preferred)")
+        sb_url = str(sb.get("url") or "")
+        sb_key = str(sb.get("anon_key") or "")
+        if not sb_url or not sb_key:
+            log("⚠️ Supabase 已启用但缺少 url/anon_key，回退本地爬取。")
+            group_end()
+        else:
+            papers, msg = fetch_recent_papers(
+                url=sb_url,
+                api_key=sb_key,
+                papers_table=str(sb.get("papers_table")),
+                days_window=int(days or 1),
+                schema=str(sb.get("schema") or "public"),
+            )
+            log(f"[Supabase] {msg}")
+            if papers:
+                if not output_file:
+                    today_str = end_date.strftime("%Y%m%d")
+                    archive_dir = os.path.join(ROOT_DIR, "archive", today_str)
+                    raw_dir = os.path.join(archive_dir, "raw")
+                    output_file = os.path.join(raw_dir, f"arxiv_papers_{today_str}.json")
+
+                os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else ".", exist_ok=True)
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(papers, f, ensure_ascii=False, indent=2)
+                log(f"💾 Supabase 结果已写入：{output_file}")
+
+                # 记录抓取时间，维持后续流程一致性
+                save_last_crawl_at(end_date)
+                group_end()
+                return
+
+            log("ℹ️ Supabase 返回 0 条或不可用，回退本地 arXiv 抓取。")
+            group_end()
 
     # ignore_seen 语义：完全按 days_window 回溯，不使用 last_crawl_at / latest_published_at 作为起点
     if ignore_seen:
@@ -431,6 +482,11 @@ if __name__ == "__main__":
         default=7,
         help="将时间窗口拆分为若干段（默认 7=按周），以减少单次查询规模并降低 HTTP 500 概率。",
     )
+    parser.add_argument(
+        "--disable-supabase-read",
+        action="store_true",
+        help="关闭 Supabase 优先读取，强制执行本地 arXiv 抓取。",
+    )
     args = parser.parse_args()
 
     # 建议先用 --days 1 测试一下，没问题再跑更长时间窗口
@@ -439,4 +495,5 @@ if __name__ == "__main__":
         output_file=args.output,
         ignore_seen=bool(args.ignore_seen),
         chunk_days=int(args.chunk_days or 7),
+        disable_supabase_read=bool(args.disable_supabase_read),
     )

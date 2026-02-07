@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Set, Any, Optional
 
 import numpy as np
 
@@ -54,6 +54,8 @@ class Paper:
   published: str | None = None
   link: str | None = None
   source: str = "arxiv"
+  embedding: Optional[np.ndarray] = None
+  embedding_model: str = ""
   tags: Set[str] = field(default_factory=set)
 
   @property
@@ -126,6 +128,7 @@ def load_paper_pool(path: str) -> List[Paper]:
   papers: List[Paper] = []
   for item in raw:
     try:
+      emb = parse_embedding_value(item.get("embedding"))
       p = Paper(
         id=str(item.get("id") or "").strip(),
         source=str(item.get("source") or "arxiv").strip() or "arxiv",
@@ -136,6 +139,8 @@ def load_paper_pool(path: str) -> List[Paper]:
         categories=[str(c) for c in (item.get("categories") or [])],
         published=str(item.get("published") or "") or None,
         link=str(item.get("link") or "") or None,
+        embedding=emb,
+        embedding_model=str(item.get("embedding_model") or "").strip(),
       )
       if p.id:
         papers.append(p)
@@ -144,6 +149,73 @@ def load_paper_pool(path: str) -> List[Paper]:
 
   log(f"[INFO] 从 {path} 读取到 {len(papers)} 篇论文。")
   return papers
+
+
+def parse_embedding_value(value: Any) -> Optional[np.ndarray]:
+  if isinstance(value, np.ndarray):
+    vec = value.astype(np.float32)
+  elif isinstance(value, list):
+    try:
+      vec = np.array([float(x) for x in value], dtype=np.float32)
+    except Exception:
+      return None
+  elif isinstance(value, str):
+    text = value.strip()
+    if not text:
+      return None
+    if text.startswith("[") and text.endswith("]"):
+      text = text[1:-1]
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    if not parts:
+      return None
+    try:
+      vec = np.array([float(p) for p in parts], dtype=np.float32)
+    except Exception:
+      return None
+  else:
+    return None
+
+  if vec.ndim != 1 or vec.size == 0:
+    return None
+  norm = float(np.linalg.norm(vec))
+  if norm <= 0:
+    return None
+  return vec / norm
+
+
+def try_use_precomputed_embeddings(
+  papers: List[Paper],
+  expected_model: str,
+) -> np.ndarray | None:
+  if not papers:
+    return None
+
+  vectors: List[np.ndarray] = []
+  dims: Set[int] = set()
+  models: Set[str] = set()
+
+  for p in papers:
+    if p.embedding is None:
+      return None
+    vectors.append(p.embedding)
+    dims.add(int(p.embedding.shape[0]))
+    m = (p.embedding_model or "").strip().lower()
+    if m:
+      models.add(m)
+
+  if len(dims) != 1:
+    log("[WARN] 预置 embedding 维度不一致，回退本地重算论文 embedding。")
+    return None
+
+  expect = (expected_model or "").strip().lower()
+  if models and expect and models != {expect}:
+    log(
+      "[WARN] 预置 embedding 模型与当前模型不一致："
+      f"precomputed={sorted(models)} current={expect}，回退本地重算论文 embedding。"
+    )
+    return None
+
+  return np.vstack(vectors)
 
 
 def rank_papers_for_queries(
@@ -374,11 +446,21 @@ def main() -> None:
     # 更新粗筛器的 top_k
     coarse_filter.top_k = dynamic_top_k
 
-    # 1) 先用通用粗筛类拿到 embeddings
-    group_start(f"Step 2.2 - compute embeddings ({os.path.basename(input_path)})")
-    coarse_result = coarse_filter.filter(items=papers, queries=queries)
-    group_end()
-    paper_embeddings = coarse_result["embeddings"]
+    # 1) 优先使用 Supabase 下发的论文 embedding（本地仅算 query embedding）；
+    #    若缺失/不一致，再回退本地重算论文 embedding。
+    paper_embeddings = try_use_precomputed_embeddings(papers, expected_model=args.model)
+    if paper_embeddings is not None:
+      group_start(f"Step 2.2 - use precomputed embeddings ({os.path.basename(input_path)})")
+      log(
+        f"[INFO] 使用预置论文 embedding：{paper_embeddings.shape[0]} 篇，"
+        f"dim={paper_embeddings.shape[1]}。"
+      )
+      group_end()
+    else:
+      group_start(f"Step 2.2 - compute embeddings ({os.path.basename(input_path)})")
+      coarse_result = coarse_filter.filter(items=papers, queries=queries)
+      group_end()
+      paper_embeddings = coarse_result["embeddings"]
 
     # 2) 再用当前文件中的 rank_papers_for_queries 做「打 tag + 生成 top_ids」
     group_start(f"Step 2.2 - rank queries ({os.path.basename(input_path)})")
