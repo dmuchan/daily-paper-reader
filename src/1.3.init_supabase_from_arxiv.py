@@ -9,16 +9,33 @@ import argparse
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 SCRIPT_DIR = os.path.dirname(__file__)
 TODAY_STR = datetime.now(timezone.utc).strftime("%Y%m%d")
+LONG_RANGE_DAYS_THRESHOLD = 7
 
 
 def run_step(label: str, args: list[str]) -> None:
     print(f"[INFO] {label}: {' '.join(args)}", flush=True)
     subprocess.run(args, check=True)
+
+
+def build_run_date_token(days: int) -> str:
+    safe_days = max(int(days), 1)
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=safe_days - 1)
+    return f"{start_date:%Y%m%d}-{end_date:%Y%m%d}"
+
+
+def resolve_date_token(date_arg: str, days: int) -> str:
+    manual = str(date_arg or "").strip()
+    if manual:
+        return manual
+    if int(days or 1) > LONG_RANGE_DAYS_THRESHOLD:
+        return build_run_date_token(days)
+    return TODAY_STR
 
 
 def main() -> None:
@@ -39,7 +56,12 @@ def main() -> None:
         action="store_false",
         help="抓取时使用 seen/crawl_state 增量状态（关闭 ignore-seen）。",
     )
-    parser.add_argument("--date", type=str, default=TODAY_STR, help="同步日期目录，默认今天 YYYYMMDD。")
+    parser.add_argument(
+        "--date",
+        type=str,
+        default="",
+        help="同步日期目录（支持 YYYYMMDD 或 YYYYMMDD-YYYYMMDD）；不填时自动按 days 推导。",
+    )
     parser.add_argument(
         "--raw-input",
         type=str,
@@ -49,7 +71,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-fetch",
         action="store_true",
-        help="跳过抓取步骤，直接复用 archive/<date>/raw/arxiv_papers_<date>.json 做同步。",
+        help="跳过抓取步骤，直接复用 archive/<token>/raw/arxiv_papers_<token>.json 做同步。",
     )
     parser.add_argument("--embed-model", type=str, default="", help="embedding 模型（空=按 config/default）。")
     parser.add_argument("--embed-device", type=str, default="cpu", help="单设备模式（如 cpu/cuda:0）。")
@@ -65,7 +87,9 @@ def main() -> None:
 
     python = sys.executable
 
-    date_str = str(args.date or TODAY_STR)
+    date_str = resolve_date_token(args.date, int(args.days or 1))
+    os.environ["DPR_RUN_DATE"] = date_str
+    print(f"[INFO] DPR_RUN_DATE={date_str}", flush=True)
     raw_input = str(args.raw_input or "").strip()
     if raw_input:
         if os.path.isabs(raw_input):
