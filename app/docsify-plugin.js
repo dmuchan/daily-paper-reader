@@ -1404,7 +1404,12 @@ window.$docsify = {
       // 侧边栏/正文的论文页标题条：英文右侧，中文左侧，中间竖线
       const isPaperRouteFile = (file) => {
         const f = String(file || '');
-        return /^\d{6}\/\d{2}\/.+\.md$/i.test(f);
+        return /^\d{6}\/\d{2}\/(?!README\.md$).+\.md$/i.test(f);
+      };
+
+      const isReportRouteFile = (file) => {
+        const f = String(file || '');
+        return /^\d{6}\/\d{2}\/README\.md$/i.test(f);
       };
 
       const fitTextToBox = (el, minPx, maxPx) => {
@@ -1517,7 +1522,9 @@ window.$docsify = {
       // 论文页导航：左右滑动 / 键盘方向键切换论文
       const DPR_NAV_STATE = {
         paperHrefs: [],
+        reportHrefs: [],
         currentHref: '',
+        currentReportHref: '',
         lastNavTs: 0,
         lastNavSource: '', // 'click' | 'key' | 'wheel' | 'swipe' | ''
       };
@@ -1719,9 +1726,31 @@ window.$docsify = {
         pendingEnter: '',
       };
 
+      const decodeLegacyIdHash = (rawHash) => {
+        const raw = String(rawHash || '').trim();
+        if (!raw) return '';
+        // 兼容 Docsify 旧式 hash：#/?id=%2f202602%2f06%2fxxx 或 #?id=/202602/06/xxx
+        const m = raw.match(/^#\/?\?id=([^&]+)(?:&.*)?$/i);
+        if (!m) return '';
+        let decoded = '';
+        try {
+          decoded = decodeURIComponent(m[1] || '');
+        } catch {
+          decoded = m[1] || '';
+        }
+        decoded = String(decoded || '').trim();
+        if (!decoded) return '';
+        // 统一为无 .md 的路由形式
+        decoded = decoded.replace(/\.md$/i, '');
+        if (!decoded.startsWith('/')) decoded = '/' + decoded;
+        return '#'+ decoded;
+      };
+
       const normalizeHref = (href) => {
         const raw = String(href || '').trim();
         if (!raw) return '';
+        const legacy = decodeLegacyIdHash(raw);
+        if (legacy) return legacy;
         // 统一成 "#/xxxx" 形式
         if (raw.startsWith('#/')) return raw;
         if (raw.startsWith('#')) return '#/' + raw.slice(1).replace(/^\//, '');
@@ -1731,7 +1760,12 @@ window.$docsify = {
       const isPaperHref = (href) => {
         const h = normalizeHref(href);
         // 只匹配论文页：#/YYYYMM/DD/slug
-        return /^#\/\d{6}\/\d{2}\/.+/i.test(h);
+        return /^#\/\d{6}\/\d{2}\/(?!README$).+/i.test(h);
+      };
+
+      const isReportHref = (href) => {
+        const h = normalizeHref(href);
+        return /^#\/\d{6}\/\d{2}\/README$/i.test(h);
       };
 
       const collectPaperHrefsFromSidebar = () => {
@@ -1751,13 +1785,42 @@ window.$docsify = {
         return out;
       };
 
+      const collectReportHrefsFromSidebar = () => {
+        const links = [];
+        const nav = document.querySelector('.sidebar-nav');
+        if (nav) {
+          links.push(...Array.from(nav.querySelectorAll('a[href]')));
+        }
+        const main = document.querySelector('.markdown-section');
+        if (main) {
+          links.push(...Array.from(main.querySelectorAll('a[href]')));
+        }
+        const out = [];
+        const seen = new Set();
+        links.forEach((a) => {
+          const href = a.getAttribute('href') || '';
+          if (!isReportHref(href)) return;
+          const norm = normalizeHref(href);
+          if (seen.has(norm)) return;
+          seen.add(norm);
+          out.push(norm);
+        });
+        return out;
+      };
+
       const updateNavState = () => {
         DPR_NAV_STATE.paperHrefs = collectPaperHrefsFromSidebar();
+        DPR_NAV_STATE.reportHrefs = collectReportHrefsFromSidebar();
         const file = vm && vm.route ? vm.route.file : '';
         if (file && isPaperRouteFile(file)) {
           DPR_NAV_STATE.currentHref = normalizeHref('#/' + String(file).replace(/\.md$/i, ''));
         } else {
           DPR_NAV_STATE.currentHref = '';
+        }
+        if (file && isReportRouteFile(file)) {
+          DPR_NAV_STATE.currentReportHref = normalizeHref('#/' + String(file).replace(/\.md$/i, ''));
+        } else {
+          DPR_NAV_STATE.currentReportHref = '';
         }
       };
 
@@ -1860,22 +1923,29 @@ window.$docsify = {
       };
 
       const navigateByDelta = (delta) => {
-        const list = DPR_NAV_STATE.paperHrefs || [];
-        if (!list.length) return;
+        const paperList = DPR_NAV_STATE.paperHrefs || [];
+        const reportList = DPR_NAV_STATE.reportHrefs || [];
         const now = Date.now();
         if (now - (DPR_NAV_STATE.lastNavTs || 0) < 450) return;
         DPR_NAV_STATE.lastNavTs = now;
 
         const current = DPR_NAV_STATE.currentHref;
+        const currentReport = DPR_NAV_STATE.currentReportHref;
+        const isHome = !current && !currentReport;
+        const reportMode = isHome || !!currentReport;
+        const list = reportMode ? reportList : paperList;
+        if (!list.length) return;
+
         // 首页：右键/左滑（delta=+1）跳到最新一天第一篇
-        if (!current) {
+        if (isHome) {
           if (delta > 0) {
             triggerPageNav(list[0], 'forward');
           }
           return;
         }
 
-        const idx = list.indexOf(current);
+        const anchor = reportMode ? currentReport : current;
+        const idx = list.indexOf(anchor);
         if (idx === -1) return;
         const nextIdx = idx + delta;
         if (nextIdx < 0 || nextIdx >= list.length) return;
@@ -2444,6 +2514,17 @@ window.$docsify = {
 
       // --- Docsify 生命周期钩子 ---
       hook.doneEach(function () {
+        // 路由统一：将 #/?id=%2f... 自动规整为 #/...
+        try {
+          const canonical = decodeLegacyIdHash(window.location.hash || '');
+          if (canonical && canonical !== window.location.hash) {
+            window.location.replace(canonical);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+
         // 当前路由对应的“论文 ID”（简单用文件名去掉 .md）
         const paperId = getPaperId();
         const routePath = vm.route && vm.route.path ? vm.route.path : '';
@@ -2456,7 +2537,9 @@ window.$docsify = {
           routePath === '/' ||
           routePath === '';
         const file = vm && vm.route ? vm.route.file : '';
+        const isReportPage = isReportRouteFile(file);
         const isPaperPage = isPaperRouteFile(file);
+        const isLandingLikePage = isHomePage || isReportPage;
 
         // A. 对正文区域进行一次全局公式渲染（支持 $...$ / $$...$$）
         const mainContent = document.querySelector('.markdown-section');
@@ -2503,7 +2586,7 @@ window.$docsify = {
           }
         }
 
-        if (!isHomePage && window.PrivateDiscussionChat) {
+        if (!isLandingLikePage && window.PrivateDiscussionChat) {
           window.PrivateDiscussionChat.initForPage(paperId);
         }
 
@@ -2520,7 +2603,7 @@ window.$docsify = {
         // ----------------------------------------------------
         // G. 侧边栏已阅读论文状态高亮
         // ----------------------------------------------------
-        if (!isHomePage && paperId) {
+        if (!isLandingLikePage && paperId) {
           markSidebarReadState(paperId);
         } else {
           // 首页也需要应用已有的“已读高亮”，但不新增记录

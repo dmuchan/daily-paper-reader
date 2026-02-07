@@ -682,6 +682,122 @@ def prepare_paper_paths(docs_dir: str, date_str: str, title: str, arxiv_id: str)
     return md_path, txt_path, paper_id
 
 
+def prepare_day_report_paths(docs_dir: str, date_str: str) -> Tuple[str, str]:
+    ym = date_str[:6]
+    day = date_str[6:]
+    day_dir = os.path.join(docs_dir, ym, day)
+    day_readme = os.path.join(day_dir, "README.md")
+    return day_dir, day_readme
+
+
+def prepare_home_module_paths(docs_dir: str) -> Tuple[str, str]:
+    notice_path = os.path.join(docs_dir, "_home_notice.md")
+    promo_path = os.path.join(docs_dir, "_home_promo.md")
+    return notice_path, promo_path
+
+
+def ensure_home_module_files(docs_dir: str) -> Tuple[str, str]:
+    notice_path, promo_path = prepare_home_module_paths(docs_dir)
+    if not os.path.exists(notice_path):
+        with open(notice_path, "w", encoding="utf-8") as f:
+            f.write("────────────────────────────────────────\n")
+            f.write("（公告占位）欢迎使用 Daily Paper Reader。\n")
+            f.write("（公告占位）可在此放置本周更新、维护通知等。\n")
+            f.write("────────────────────────────────────────\n")
+    if not os.path.exists(promo_path):
+        with open(promo_path, "w", encoding="utf-8") as f:
+            f.write("════════════════════════════════════════\n")
+            f.write("（宣传占位）欢迎 Star / Fork 本项目。\n")
+            f.write("（宣传占位）欢迎提交 Issue 与 PR。\n")
+            f.write("════════════════════════════════════════\n")
+    return notice_path, promo_path
+
+
+def _read_module_markdown(path: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return (f.read() or "").strip()
+    except Exception:
+        return ""
+
+
+def _format_entry_tags(tags: List[Tuple[str, str]]) -> str:
+    labels: List[str] = []
+    for kind, label in tags or []:
+        k = (kind or "").strip()
+        v = (label or "").strip()
+        if k == "score":
+            continue
+        if not v:
+            continue
+        if k in ("keyword", "query", "paper"):
+            labels.append(f"{k}:{v}")
+        else:
+            labels.append(v)
+    return "、".join(labels) if labels else "无标签"
+
+
+def build_docsify_id_href(path_no_ext: str) -> str:
+    """
+    统一生成 Docsify Markdown 内链格式：`/...`。
+    注意：在 Markdown 中使用 `(#/...)` 会被 Docsify 当作页内锚点，触发 querySelector 报错。
+    """
+    p = str(path_no_ext or "").strip()
+    p = p.replace("\\", "/").strip()
+    p = re.sub(r"\.md$", "", p, flags=re.IGNORECASE)
+    if not p:
+        return "/"
+    p = p.lstrip("/")
+    return f"/{p}"
+
+
+def build_latest_report_section(
+    date_str: str,
+    date_label: str | None,
+    generated_at: str,
+    recommend_exists: bool,
+    deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+) -> str:
+    effective_label = (date_label or "").strip() or format_date_str(date_str)
+    run_status = "成功" if recommend_exists else "未产出 recommend 文件（视为无结果）"
+    total = len(deep_entries) + len(quick_entries)
+    ym = date_str[:6]
+    day = date_str[6:]
+
+    lines: List[str] = []
+    lines.append(f"- 最新运行日期：{effective_label}")
+    lines.append(f"- 运行时间：{generated_at}")
+    lines.append(f"- 运行状态：{run_status}")
+    lines.append(f"- 本次总论文数：{total}")
+    lines.append(f"- 精读区：{len(deep_entries)}")
+    lines.append(f"- 速读区：{len(quick_entries)}")
+    report_href = build_docsify_id_href(f"{ym}/{day}/README")
+    lines.append(f"- 详情：[{report_href}]({report_href})")
+    lines.append("")
+    lines.append("### 精读区论文标签")
+    if deep_entries:
+        for idx, (paper_id, title, tags) in enumerate(deep_entries, start=1):
+            safe_title = (title or "").strip() or paper_id
+            lines.append(f"{idx}. [{safe_title}]({build_docsify_id_href(paper_id)})  ")
+            lines.append(f"   标签：{_format_entry_tags(tags)}")
+    else:
+        lines.append("- 本次无精读推荐。")
+    lines.append("")
+    lines.append("### 速读区论文标签")
+    if quick_entries:
+        for idx, (paper_id, title, tags) in enumerate(quick_entries, start=1):
+            safe_title = (title or "").strip() or paper_id
+            lines.append(f"{idx}. [{safe_title}]({build_docsify_id_href(paper_id)})  ")
+            lines.append(f"   标签：{_format_entry_tags(tags)}")
+    else:
+        lines.append("- 本次无速读推荐。")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def normalize_sidebar_tag(tag: str) -> str:
     text = (tag or "").strip()
     if not text:
@@ -1247,8 +1363,265 @@ def update_sidebar(
     insert_idx = daily_idx + 1
     lines[insert_idx:insert_idx] = block
 
+    # 清理历史 Sidebar 中遗留的“日报”入口
+    i = daily_idx + 1
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("* "):
+            break
+        if lines[i].startswith("    * [日报]("):
+            del lines[i]
+            continue
+        i += 1
+
     with open(sidebar_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
+
+
+def build_day_report_markdown(
+    date_str: str,
+    date_label: str | None,
+    deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    recommend_exists: bool,
+) -> str:
+    effective_label = (date_label or "").strip() or format_date_str(date_str)
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    total = len(deep_entries) + len(quick_entries)
+
+    lines: List[str] = []
+    lines.append(f"# 日报 · {effective_label}")
+    lines.append("")
+    lines.append(f"- 生成时间：{generated_at}")
+    lines.append(f"- 当次推荐总数：{total}")
+    lines.append(f"- 精读区：{len(deep_entries)}")
+    lines.append(f"- 速读区：{len(quick_entries)}")
+    lines.append("")
+
+    if not recommend_exists:
+        lines.append("> 本次未找到 recommend 结果文件。")
+        lines.append("")
+    elif total == 0:
+        lines.append("> 本次触发没有产出可推荐论文。")
+        lines.append("")
+
+    lines.append("## 精读区")
+    if deep_entries:
+        for idx, (paper_id, title, _tags) in enumerate(deep_entries, start=1):
+            safe_title = (title or "").strip() or paper_id
+            lines.append(f"{idx}. [{safe_title}]({build_docsify_id_href(paper_id)})")
+    else:
+        lines.append("- 本次无精读推荐。")
+    lines.append("")
+
+    lines.append("## 速读区")
+    if quick_entries:
+        for idx, (paper_id, title, _tags) in enumerate(quick_entries, start=1):
+            safe_title = (title or "").strip() or paper_id
+            lines.append(f"{idx}. [{safe_title}]({build_docsify_id_href(paper_id)})")
+    else:
+        lines.append("- 本次无速读推荐。")
+    lines.append("")
+
+    lines.append("---")
+    lines.append("使用键盘方向键可在日报/论文之间快速切换。")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_day_report_readme(
+    docs_dir: str,
+    date_str: str,
+    date_label: str | None,
+    deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    recommend_exists: bool,
+) -> str:
+    day_dir, day_readme = prepare_day_report_paths(docs_dir, date_str)
+    os.makedirs(day_dir, exist_ok=True)
+    content = build_day_report_markdown(
+        date_str=date_str,
+        date_label=date_label,
+        deep_entries=deep_entries,
+        quick_entries=quick_entries,
+        recommend_exists=recommend_exists,
+    )
+    with open(day_readme, "w", encoding="utf-8") as f:
+        f.write(content)
+    return day_readme
+
+
+def list_day_report_links(docs_dir: str) -> List[Tuple[str, str]]:
+    out: List[Tuple[str, str]] = []
+    if not os.path.isdir(docs_dir):
+        return out
+    ym_dirs = sorted([d for d in os.listdir(docs_dir) if re.fullmatch(r"\d{6}", d)], reverse=True)
+    for ym in ym_dirs:
+        ym_path = os.path.join(docs_dir, ym)
+        if not os.path.isdir(ym_path):
+            continue
+        day_dirs = sorted([d for d in os.listdir(ym_path) if re.fullmatch(r"\d{2}", d)], reverse=True)
+        for day in day_dirs:
+            readme = os.path.join(ym_path, day, "README.md")
+            if not os.path.exists(readme):
+                continue
+            date8 = f"{ym}{day}"
+            label = format_date_str(date8)
+            href = build_docsify_id_href(f"{ym}/{day}/README")
+            out.append((label, href))
+    return out
+
+
+def build_home_readme_content(
+    docs_dir: str,
+    date_str: str,
+    date_label: str | None,
+    generated_at: str,
+    recommend_exists: bool,
+    deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+) -> str:
+    notice_path, promo_path = ensure_home_module_files(docs_dir)
+    notice_md = _read_module_markdown(notice_path)
+    promo_md = _read_module_markdown(promo_path)
+    latest_report_md = build_latest_report_section(
+        date_str=date_str,
+        date_label=date_label,
+        generated_at=generated_at,
+        recommend_exists=recommend_exists,
+        deep_entries=deep_entries,
+        quick_entries=quick_entries,
+    )
+
+    lines: List[str] = []
+    lines.append(notice_md or "（公告模块为空）")
+    lines.append("")
+    lines.append("## 每次日报")
+    lines.append(latest_report_md)
+    lines.append("")
+    lines.append(promo_md or "（宣传模块为空）")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def sync_home_readme_from_day_report(
+    docs_dir: str,
+    date_str: str,
+    date_label: str | None,
+    generated_at: str,
+    recommend_exists: bool,
+    deep_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    quick_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+) -> str:
+    home_readme = os.path.join(docs_dir, "README.md")
+    # 首页由三段模块拼接：公告栏（独立 md）+ 本次日报 + 宣传栏（独立 md）
+    content = build_home_readme_content(
+        docs_dir=docs_dir,
+        date_str=date_str,
+        date_label=date_label,
+        generated_at=generated_at,
+        recommend_exists=recommend_exists,
+        deep_entries=deep_entries,
+        quick_entries=quick_entries,
+    )
+    with open(home_readme, "w", encoding="utf-8") as f:
+        f.write(content)
+    return home_readme
+
+
+def write_run_daily_log(
+    date_str: str,
+    mode: str,
+    recommend_path: str,
+    recommend_exists: bool,
+    deep_count: int,
+    quick_count: int,
+    docs_dir: str,
+    day_readme: str,
+) -> str:
+    log_dir = os.path.join(ROOT_DIR, "archive", date_str, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    out_path = os.path.join(log_dir, "daily_report.json")
+    payload = {
+        "date": format_date_str(date_str),
+        "mode": mode,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "recommend_path": recommend_path,
+        "recommend_exists": bool(recommend_exists),
+        "deep_count": int(deep_count),
+        "quick_count": int(quick_count),
+        "total_count": int(deep_count + quick_count),
+        "docs_dir": docs_dir,
+        "day_readme": day_readme,
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    return out_path
+
+
+def backfill_history_day_reports(docs_dir: str) -> int:
+    """
+    为历史日期目录补齐 README.md（若不存在），便于首页左右切换日报。
+    该补齐不依赖 LLM，只基于已存在的论文 markdown 文件生成简版日报。
+    """
+    if not os.path.isdir(docs_dir):
+        return 0
+
+    created = 0
+    ym_dirs = sorted(
+        [d for d in os.listdir(docs_dir) if re.fullmatch(r"\d{6}", d)],
+        reverse=True,
+    )
+    for ym in ym_dirs:
+        ym_path = os.path.join(docs_dir, ym)
+        if not os.path.isdir(ym_path):
+            continue
+        day_dirs = sorted(
+            [d for d in os.listdir(ym_path) if re.fullmatch(r"\d{2}", d)],
+            reverse=True,
+        )
+        for day in day_dirs:
+            day_path = os.path.join(ym_path, day)
+            if not os.path.isdir(day_path):
+                continue
+            readme_path = os.path.join(day_path, "README.md")
+            if os.path.exists(readme_path):
+                continue
+
+            paper_files = sorted(
+                [
+                    fn
+                    for fn in os.listdir(day_path)
+                    if fn.lower().endswith(".md")
+                    and fn.upper() != "README.MD"
+                    and not fn.startswith("_")
+                ]
+            )
+
+            date8 = f"{ym}{day}"
+            date_label = format_date_str(date8)
+            lines = [f"# 日报 · {date_label}", ""]
+            lines.append("- 该日报为历史补齐版本（由已有文档自动生成）。")
+            lines.append(f"- 论文数量：{len(paper_files)}")
+            lines.append("")
+            lines.append("## 论文列表")
+            if paper_files:
+                for idx, fn in enumerate(paper_files, start=1):
+                    base = fn[:-3]
+                    # 尽量从文件名恢复标题（保留 slug，可点击）
+                    title_guess = re.sub(r"^[0-9]{4}\.[0-9]{5}v[0-9]-", "", base).replace("-", " ").strip()
+                    title_guess = title_guess or base
+                    lines.append(f"{idx}. [{title_guess}]({build_docsify_id_href(f'{ym}/{day}/{base}')})")
+            else:
+                lines.append("- 当天目录暂无论文文档。")
+            lines.append("")
+
+            with open(readme_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            created += 1
+
+    return created
 
 
 def _extract_md_section(md_text: str, heading: str) -> str:
@@ -1446,24 +1819,25 @@ def main() -> None:
         mode = mode.split(",", 1)[0].strip()
 
     docs_dir = args.docs_dir or resolve_docs_dir()
+    created_reports = backfill_history_day_reports(docs_dir)
+    if created_reports > 0:
+        log(f"[INFO] 已补齐历史日报 README：{created_reports} 个")
     archive_dir = os.path.join(ROOT_DIR, "archive", date_str, "recommend")
     recommend_path = os.path.join(archive_dir, f"arxiv_papers_{date_str}.{mode}.json")
-    if not os.path.exists(recommend_path):
-        log(f"[WARN] recommend 文件不存在（今天可能没有新论文）：{recommend_path}，将跳过 Step 6。")
-        return
+    recommend_exists = os.path.exists(recommend_path)
+    if not recommend_exists:
+        log(f"[WARN] recommend 文件不存在（今天可能没有新论文）：{recommend_path}。将生成空日报并更新首页。")
 
     log_substep("6.1", "读取 recommend 结果", "START")
     payload = {}
     try:
-        with open(recommend_path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
+        if recommend_exists:
+            with open(recommend_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
     finally:
         log_substep("6.1", "读取 recommend 结果", "END")
     deep_list = payload.get("deep_dive") or []
     quick_list = payload.get("quick_skim") or []
-    if not deep_list and not quick_list:
-        log("[INFO] 推荐列表为空，将跳过生成 docs 与更新侧边栏。")
-        return
 
     def _paper_score(p: dict) -> float:
         try:
@@ -1550,18 +1924,45 @@ def main() -> None:
             quick_entries.append((pid, title, extract_sidebar_tags(paper)))
         log_substep("6.3", "生成速读区文章", "END")
 
-    sidebar_path = os.path.join(docs_dir, "_sidebar.md")
-    log_substep("6.4", "更新侧边栏", "START")
-    update_sidebar(
-        sidebar_path,
-        date_str,
-        deep_entries,
-        quick_entries,
+    log_substep("6.4", "生成当日日报并同步首页 README", "START")
+    run_generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    day_readme = write_day_report_readme(
+        docs_dir=docs_dir,
+        date_str=date_str,
         date_label=args.sidebar_date_label,
+        deep_entries=deep_entries,
+        quick_entries=quick_entries,
+        recommend_exists=recommend_exists,
     )
-    log_substep("6.4", "更新侧边栏", "END")
+    home_readme = sync_home_readme_from_day_report(
+        docs_dir=docs_dir,
+        date_str=date_str,
+        date_label=args.sidebar_date_label,
+        generated_at=run_generated_at,
+        recommend_exists=recommend_exists,
+        deep_entries=deep_entries,
+        quick_entries=quick_entries,
+    )
+    log(f"[OK] day report saved: {day_readme}")
+    log(f"[OK] home README synced: {home_readme}")
+    log_substep("6.4", "生成当日日报并同步首页 README", "END")
 
-    log_substep("6.5", "生成可下载元数据索引（JSON）", "START")
+    sidebar_path = os.path.join(docs_dir, "_sidebar.md")
+    if deep_entries or quick_entries:
+        log_substep("6.5", "更新侧边栏", "START")
+        update_sidebar(
+            sidebar_path,
+            date_str,
+            deep_entries,
+            quick_entries,
+            date_label=args.sidebar_date_label,
+        )
+        log_substep("6.5", "更新侧边栏", "END")
+    else:
+        log_substep("6.5", "更新侧边栏", "SKIP")
+        log("[INFO] 本次无推荐论文，不写入 Sidebar 日期目录。")
+
+    log_substep("6.6", "生成可下载元数据索引（JSON）", "START")
     try:
         out_path = write_day_meta_index_json(
             docs_dir,
@@ -1573,7 +1974,21 @@ def main() -> None:
         log(f"[OK] meta index saved: {out_path}")
     except Exception as e:
         log(f"[WARN] 生成元数据索引失败：{e}")
-    log_substep("6.5", "生成可下载元数据索引（JSON）", "END")
+    log_substep("6.6", "生成可下载元数据索引（JSON）", "END")
+
+    log_substep("6.7", "写入运行日志（日报）", "START")
+    run_log = write_run_daily_log(
+        date_str=date_str,
+        mode=mode,
+        recommend_path=recommend_path,
+        recommend_exists=recommend_exists,
+        deep_count=len(deep_entries),
+        quick_count=len(quick_entries),
+        docs_dir=docs_dir,
+        day_readme=day_readme,
+    )
+    log(f"[OK] daily report log saved: {run_log}")
+    log_substep("6.7", "写入运行日志（日报）", "END")
 
     log(f"[OK] docs updated: {docs_dir}")
 
