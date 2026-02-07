@@ -52,8 +52,34 @@ class SubscriptionPlanTest(unittest.TestCase):
         self.assertTrue(plan['context_queries'])
 
         kw_bm25 = [q for q in plan['bm25_queries'] if q.get('type') == 'keyword'][0]
-        self.assertEqual(kw_bm25.get('boolean_expr'), 'A AND B')
+        self.assertEqual(kw_bm25.get('boolean_expr'), '')
+        self.assertEqual(kw_bm25.get('query_text'), 'A B')
         self.assertEqual(kw_bm25.get('paper_tag'), 'keyword:SR')
+
+    def test_build_pipeline_inputs_boolean_mixed_mode(self):
+        cfg = {
+            'subscriptions': {
+                'keyword_recall_mode': 'boolean_mixed',
+                'intent_profiles': [
+                    {
+                        'id': 'p1',
+                        'tag': 'SR',
+                        'enabled': True,
+                        'keyword_rules': [
+                            {
+                                'id': 'k1',
+                                'expr': 'A AND B',
+                                'enabled': True,
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+        plan = build_pipeline_inputs(cfg)
+        kw_bm25 = [q for q in plan['bm25_queries'] if q.get('type') == 'keyword'][0]
+        self.assertEqual(kw_bm25.get('boolean_expr'), 'A AND B')
+        self.assertEqual(kw_bm25.get('query_text'), 'A AND B')
 
     def test_compile_legacy_from_profiles(self):
         subs = {

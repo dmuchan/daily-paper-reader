@@ -2842,6 +2842,21 @@ article.markdown-section {
   justify-content: flex-end;
 }
 
+.dpr-modal-add-inline {
+  justify-content: stretch;
+  gap: 8px;
+}
+
+.dpr-modal-add-inline input[type='text'] {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #ccdaef;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 .dpr-edit-base {
   display: grid;
   grid-template-columns: 1fr 1fr;

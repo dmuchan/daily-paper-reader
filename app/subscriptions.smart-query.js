@@ -27,22 +27,25 @@ window.SubscriptionsSmartQuery = (function () {
     '{',
     '  "keywords": [',
     '    {',
-    '      "expr": "布尔表达式（可含 AND/OR/NOT/括号/author:）",',
-    '      "logic_cn": "一句中文解释该表达式逻辑",',
-    '      "must_have": ["必须包含概念"],',
-    '      "optional": ["可选扩展概念"],',
-    '      "exclude": ["排除概念"],',
-    '      "rewrite_for_embedding": "去掉布尔符号后的语义表达"',
+    '      "expr": "关键词短语（单条用于召回，多个关键词之间默认 OR）",',
+    '      "logic_cn": "一句中文解释该关键词为何有助于召回",',
+    '      "must_have": ["可选：该关键词关注的核心概念"],',
+    '      "optional": ["可选：该关键词相关扩展概念"],',
+    '      "exclude": ["可选：尽量避开的概念"],',
+    '      "rewrite_for_embedding": "与该关键词语义一致的自然语言短语"',
     '    }',
     '  ],',
     '  "queries": [',
     '    {',
-    '      "text": "语义查询句子",',
-    '      "logic_cn": "一句中文解释该查询意图"',
+    '      "text": "润色后的语义 Query（供 embedding+ranker+LLM 链路）",',
+    '      "logic_cn": "一句中文解释该 Query 的检索意图和侧重点"',
     '    }',
     '  ]',
     '}',
-    '要求：只输出 JSON，不要输出其它文本。',
+    '要求：',
+    '1) keywords 请给出 5~12 条短语，便于用户多选；',
+    '2) queries 请给出 3~6 条不同侧重点的润色 Query，供用户多选；',
+    '3) 只输出 JSON，不要输出其它文本。',
   ].join('\n');
 
   const normalizeText = (v) => String(v || '').trim();
@@ -269,6 +272,10 @@ window.SubscriptionsSmartQuery = (function () {
       description,
       keywords: (candidates.keywords || []).map((x) => ({ ...x, _selected: true })),
       queries: (candidates.queries || []).map((x) => ({ ...x, _selected: true })),
+      customKeyword: '',
+      customKeywordLogic: '',
+      customQuery: '',
+      customQueryLogic: '',
     };
     renderAddModal();
     openModal();
@@ -310,10 +317,20 @@ window.SubscriptionsSmartQuery = (function () {
         <button class="arxiv-tool-btn" data-action="close">关闭</button>
       </div>
       <div class="dpr-modal-sub">标签：${escapeHtml(modalState.tag || '')} ｜ 描述：${escapeHtml(modalState.description || '（无）')}</div>
-      <div class="dpr-modal-group-title">关键词候选</div>
+      <div class="dpr-modal-group-title">关键词候选（用于召回，勾选项之间默认 OR）</div>
       <div class="dpr-modal-list">${kwHtml || '<div style="color:#999;">无关键词候选</div>'}</div>
+      <div class="dpr-modal-actions-inline dpr-modal-add-inline">
+        <input id="dpr-add-kw-text" type="text" placeholder="手动新增关键词（召回词）" value="${escapeHtml(modalState.customKeyword || '')}" />
+        <input id="dpr-add-kw-logic" type="text" placeholder="关键词说明（可选）" value="${escapeHtml(modalState.customKeywordLogic || '')}" />
+        <button class="arxiv-tool-btn" data-action="add-custom-kw">加入候选</button>
+      </div>
       <div class="dpr-modal-group-title">语义 Query 候选</div>
       <div class="dpr-modal-list">${qHtml || '<div style="color:#999;">无 Query 候选</div>'}</div>
+      <div class="dpr-modal-actions-inline dpr-modal-add-inline">
+        <input id="dpr-add-query-text" type="text" placeholder="手动新增润色 Query" value="${escapeHtml(modalState.customQuery || '')}" />
+        <input id="dpr-add-query-logic" type="text" placeholder="Query 说明（可选）" value="${escapeHtml(modalState.customQueryLogic || '')}" />
+        <button class="arxiv-tool-btn" data-action="add-custom-query">加入候选</button>
+      </div>
       <div class="dpr-modal-actions">
         <button class="arxiv-tool-btn" data-action="apply-add" style="background:#2e7d32;color:#fff;">确认新增</button>
       </div>
@@ -641,6 +658,68 @@ window.SubscriptionsSmartQuery = (function () {
     }
 
     if (modalState && modalState.type === 'add') {
+      if (action === 'add-custom-kw') {
+        const expr = normalizeText(document.getElementById('dpr-add-kw-text')?.value || '');
+        const logic = normalizeText(document.getElementById('dpr-add-kw-logic')?.value || '');
+        if (!expr) {
+          setMessage('请输入要新增的关键词。', '#c00');
+          return;
+        }
+        const existed = (modalState.keywords || []).some(
+          (x) => normalizeText(x.expr || '').toLowerCase() === expr.toLowerCase(),
+        );
+        if (existed) {
+          setMessage('该关键词已在候选中。', '#c00');
+          return;
+        }
+        modalState.keywords.push({
+          id: `manual-kw-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          expr,
+          logic_cn: logic,
+          must_have: [],
+          optional: [],
+          exclude: [],
+          rewrite_for_embedding: cleanBooleanForEmbedding(expr),
+          enabled: true,
+          source: 'manual',
+          note: '',
+          _selected: true,
+        });
+        modalState.customKeyword = '';
+        modalState.customKeywordLogic = '';
+        renderAddModal();
+        setMessage('已加入自定义关键词候选。', '#666');
+        return;
+      }
+      if (action === 'add-custom-query') {
+        const text = normalizeText(document.getElementById('dpr-add-query-text')?.value || '');
+        const logic = normalizeText(document.getElementById('dpr-add-query-logic')?.value || '');
+        if (!text) {
+          setMessage('请输入要新增的 Query。', '#c00');
+          return;
+        }
+        const existed = (modalState.queries || []).some(
+          (x) => normalizeText(x.text || '').toLowerCase() === text.toLowerCase(),
+        );
+        if (existed) {
+          setMessage('该 Query 已在候选中。', '#c00');
+          return;
+        }
+        modalState.queries.push({
+          id: `manual-q-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          text,
+          logic_cn: logic,
+          enabled: true,
+          source: 'manual',
+          note: '',
+          _selected: true,
+        });
+        modalState.customQuery = '';
+        modalState.customQueryLogic = '';
+        renderAddModal();
+        setMessage('已加入自定义 Query 候选。', '#666');
+        return;
+      }
       if (action === 'apply-add') {
         applyAddModal();
         return;
@@ -701,7 +780,7 @@ window.SubscriptionsSmartQuery = (function () {
       .replace(/\{\{USER_DESCRIPTION\}\}/g, desc)
       .replace(
         /\{\{RETRIEVAL_CONTEXT\}\}/g,
-        'BM25 链路支持布尔表达式与逻辑语义；Embedding 链路仅使用 rewrite_for_embedding 与 semantic query。',
+        '关键词链路仅用于召回，多个关键词按 OR 关系组合；Query 链路用于 embedding + ranker + LLM 打分，请生成可多选的润色 Query。',
       );
 
     try {
