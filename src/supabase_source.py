@@ -35,15 +35,20 @@ def get_supabase_read_config(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_headers(api_key: str) -> Dict[str, str]:
-    return {
+def _build_headers(api_key: str, schema: str = "public") -> Dict[str, str]:
+    headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
+    safe_schema = _norm(schema)
+    if safe_schema:
+        headers["Accept-Profile"] = safe_schema
+        headers["Content-Profile"] = safe_schema
+    return headers
 
 
-def _base_rest_url(url: str, schema: str) -> str:
+def _base_rest_url(url: str) -> str:
     u = _norm(url).rstrip("/")
     return f"{u}/rest/v1"
 
@@ -136,7 +141,7 @@ def fetch_papers_by_date_range(
     start_iso_q = quote(start_dt.isoformat().replace("+00:00", "Z"), safe="")
     end_iso_q = quote(end_dt.isoformat().replace("+00:00", "Z"), safe="")
 
-    rest = _base_rest_url(url, schema)
+    rest = _base_rest_url(url)
     per_page = min(max(int(max_rows or 1), 1), 1000)
     fetched = 0
     offset = 0
@@ -154,7 +159,7 @@ def fetch_papers_by_date_range(
                 f"&limit={int(page_limit)}"
                 f"&offset={int(offset)}"
             )
-            resp = requests.get(endpoint, headers=_build_headers(api_key), timeout=timeout)
+            resp = requests.get(endpoint, headers=_build_headers(api_key, schema), timeout=timeout)
             if resp.status_code >= 300:
                 return ([], f"papers 查询失败：HTTP {resp.status_code} {resp.text[:200]}")
             rows = resp.json() or []
@@ -214,6 +219,7 @@ def match_papers_by_embedding(
     rpc_name: str,
     query_embedding: List[float],
     match_count: int,
+    schema: str = "public",
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
@@ -229,7 +235,7 @@ def match_papers_by_embedding(
     if not vec:
         return ([], "query embedding 为空")
     k = max(int(match_count or 1), 1)
-    endpoint = f"{_base_rest_url(url, 'public')}/rpc/{safe_rpc}"
+    endpoint = f"{_base_rest_url(url)}/rpc/{safe_rpc}"
     payload = {
         "query_embedding": vec,
         "match_count": k,
@@ -238,7 +244,7 @@ def match_papers_by_embedding(
         resp = requests.post(
             endpoint,
             headers={
-                **_build_headers(api_key),
+                **_build_headers(api_key, schema),
                 "Content-Type": "application/json",
             },
             json=payload,

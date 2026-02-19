@@ -39,12 +39,16 @@ def _base_rest(url: str) -> str:
     return _norm(url).rstrip("/") + "/rest/v1"
 
 
-def _headers(service_key: str, prefer: str | None = None) -> Dict[str, str]:
+def _headers(service_key: str, prefer: str | None = None, schema: str = "public") -> Dict[str, str]:
+    safe_schema = _norm(schema)
     h = {
         "apikey": service_key,
         "Authorization": f"Bearer {service_key}",
         "Content-Type": "application/json",
     }
+    if safe_schema:
+        h["Accept-Profile"] = safe_schema
+        h["Content-Profile"] = safe_schema
     if prefer:
         h["Prefer"] = prefer
     return h
@@ -234,6 +238,7 @@ def upsert_papers(
     service_key: str,
     table: str,
     rows: List[Dict[str, Any]],
+    schema: str = "public",
     batch_size: int = 500,
     timeout: int = 30,
     retries: int = 3,
@@ -254,7 +259,7 @@ def upsert_papers(
             try:
                 resp = requests.post(
                     endpoint,
-                    headers=_headers(service_key, "resolution=merge-duplicates"),
+                    headers=_headers(service_key, "resolution=merge-duplicates", schema=schema),
                     data=json.dumps(chunk, ensure_ascii=False, separators=(",", ":")),
                     timeout=max(int(timeout or 30), 1),
                 )
@@ -325,6 +330,7 @@ def main() -> None:
     parser.add_argument("--url", type=str, default=os.getenv("SUPABASE_URL", ""))
     parser.add_argument("--service-key", type=str, default=os.getenv("SUPABASE_SERVICE_KEY", ""))
     parser.add_argument("--papers-table", type=str, default=os.getenv("SUPABASE_PAPERS_TABLE", "arxiv_papers"))
+    parser.add_argument("--schema", type=str, default=os.getenv("SUPABASE_SCHEMA", "public"))
     parser.add_argument("--embed-model", type=str, default="")
     parser.add_argument("--embed-device", type=str, default="cpu")
     parser.add_argument("--embed-devices", type=str, default="")
@@ -376,6 +382,7 @@ def main() -> None:
             url=url,
             service_key=key,
             table=args.papers_table,
+            schema=_norm(args.schema),
             rows=rows,
             batch_size=max(int(args.upsert_batch_size or 1), 1),
             timeout=max(int(args.upsert_timeout or 1), 1),

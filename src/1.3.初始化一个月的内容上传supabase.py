@@ -104,6 +104,7 @@ def main() -> None:
     parser.add_argument("--embed-devices", type=str, default="", help="多设备列表，如 cuda:0,cuda:1。")
     parser.add_argument("--embed-batch-size", type=int, default=8, help="embedding batch size。")
     parser.add_argument("--embed-max-length", type=int, default=0, help="embedding max length，<=0 表示不限制。")
+    parser.add_argument("--schema", type=str, default=os.getenv("SUPABASE_SCHEMA", "public"), help="Supabase schema。")
     parser.add_argument("--upsert-batch-size", type=int, default=200, help="Supabase upsert 批大小。")
     parser.add_argument("--upsert-timeout", type=int, default=120, help="Supabase upsert 超时（秒）。")
     parser.add_argument("--upsert-retries", type=int, default=5, help="Supabase upsert 每批重试次数。")
@@ -182,6 +183,8 @@ def main() -> None:
         os.path.join(SCRIPT_DIR, "1.2.sync_supabase_public.py"),
         "--date",
         date_str,
+        "--schema",
+        str(args.schema),
         "--embed-batch-size",
         str(max(int(args.embed_batch_size or 1), 1)),
         "--embed-max-length",

@@ -33,6 +33,14 @@ python src/5.select_papers.py                      # 论文选择
 python src/6.generate_docs.py                      # 生成文档网站
 ```
 
+## 协作约定
+
+- 每次完成代码改动后，默认先执行一次 `git commit`，不例外。  
+- 默认 commit 提交说明请按约定前缀：
+  - `[update] xxx`：功能/业务更新
+  - `[fix] xxx`：问题修复
+  - `[beautify] xxx`：重构/美化/优化
+
 ## 架构概览
 
 ### 后端流水线 (Python - `src/`)

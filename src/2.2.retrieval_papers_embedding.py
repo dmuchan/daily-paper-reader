@@ -308,6 +308,7 @@ def rank_papers_for_queries_via_supabase(
   url = str(supabase_conf.get("url") or "").strip()
   api_key = str(supabase_conf.get("anon_key") or "").strip()
   rpc_name = str(supabase_conf.get("vector_rpc") or "match_arxiv_papers").strip()
+  schema = str(supabase_conf.get("schema") or "public").strip()
   if not url or not api_key:
     return {"queries": [], "papers": {}, "total_hits": 0}
 
@@ -330,6 +331,7 @@ def rank_papers_for_queries_via_supabase(
       api_key=api_key,
       rpc_name=rpc_name,
       query_embedding=q_vec.tolist(),
+      schema=schema,
       match_count=max(int(top_k or 1), 1),
     )
     log(f"[Supabase Vector] {msg} | tag={q.get('tag') or ''}")
